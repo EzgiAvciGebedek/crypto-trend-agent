@@ -54,6 +54,20 @@ create table if not exists market_summaries (
 );
 create index if not exists idx_summaries_date on market_summaries (date);
 
+-- Overall crypto search interest per market (localized "crypto" term) + 1d/7d/30d change
+create table if not exists crypto_overall (
+  id            bigint generated always as identity primary key,
+  date          date not null,
+  market_code   text not null,
+  score         numeric,          -- most recent Trends interest (0-100)
+  change_1d     numeric,
+  change_7d     numeric,
+  change_30d    numeric,
+  created_at    timestamptz not null default now(),
+  unique (date, market_code)
+);
+create index if not exists idx_overall_market_date on crypto_overall (market_code, date desc);
+
 -- Source health for each run (for the dashboard indicator)
 create table if not exists source_health (
   id          bigint generated always as identity primary key,

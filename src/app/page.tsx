@@ -1,10 +1,11 @@
 import { Suspense } from "react";
 import { MARKETS } from "@/config/markets";
 import { isSupabaseConfigured } from "@/lib/supabase";
-import { latestDate, getSummaries, getRecommendations } from "@/lib/store";
+import { latestDate, getSummaries, getRecommendations, getLatestCryptoOverall } from "@/lib/store";
 import GlobalSignals from "@/components/GlobalSignals";
 import SourceHealthBar from "@/components/SourceHealth";
 import RunAnalysisButton from "@/components/RunAnalysisButton";
+import OverallChange from "@/components/OverallChange";
 import { ActionBadge } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +15,7 @@ export default async function HomePage() {
   const date = dbReady ? await latestDate() : null;
   const summaries = date ? await getSummaries(date) : [];
   const recs = date ? await getRecommendations(date) : [];
+  const overall = dbReady ? await getLatestCryptoOverall() : {};
 
   const summaryByMarket = new Map(summaries.map((s) => [s.market_code, s.summary]));
   const recsByMarket = new Map<string, typeof recs>();
@@ -68,6 +70,7 @@ export default async function HomePage() {
                   <div className="text-xs text-neutral-500">{m.language} · {m.code}</div>
                 </div>
               </div>
+              <OverallChange data={overall[m.code]} />
               {summary ? (
                 <p className="mt-3 text-xs text-neutral-600 dark:text-neutral-400 line-clamp-4">{summary}</p>
               ) : (

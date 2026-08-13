@@ -9,6 +9,7 @@ import type {
   Recommendation,
   MarketSummary,
   SourceHealth,
+  CryptoOverall,
 } from "./types";
 
 // --- Writes ---
@@ -39,6 +40,12 @@ export async function saveSummary(row: MarketSummary): Promise<void> {
   const db = getSupabase();
   if (!db) return;
   await db.from("market_summaries").upsert(row, { onConflict: "date,market_code" });
+}
+
+export async function saveCryptoOverall(row: CryptoOverall): Promise<void> {
+  const db = getSupabase();
+  if (!db) return;
+  await db.from("crypto_overall").upsert(row, { onConflict: "date,market_code" });
 }
 
 export async function saveHealth(date: string, rows: SourceHealth[]): Promise<void> {
@@ -150,6 +157,22 @@ export async function getHealth(date: string): Promise<SourceHealth[]> {
   if (!db) return [];
   const { data } = await db.from("source_health").select("*").eq("date", date);
   return (data ?? []).map((r) => ({ source: r.source, ok: r.ok, detail: r.detail })) as SourceHealth[];
+}
+
+// Latest overall crypto interest per market (most recent row for each market_code).
+export async function getLatestCryptoOverall(): Promise<Record<string, CryptoOverall>> {
+  const db = getSupabase();
+  if (!db) return {};
+  const { data } = await db
+    .from("crypto_overall")
+    .select("*")
+    .order("date", { ascending: false })
+    .limit(200);
+  const map: Record<string, CryptoOverall> = {};
+  for (const r of (data ?? []) as CryptoOverall[]) {
+    if (!map[r.market_code]) map[r.market_code] = r; // first seen = most recent (desc order)
+  }
+  return map;
 }
 
 export async function availableDates(limit = 30): Promise<string[]> {

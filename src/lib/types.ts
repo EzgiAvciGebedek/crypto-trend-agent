@@ -58,6 +58,16 @@ export interface MarketSummary {
   summary: string;
 }
 
+export interface CryptoOverall {
+  id?: number;
+  date: string;
+  market_code: MarketCode;
+  score: number | null;
+  change_1d: number | null;
+  change_7d: number | null;
+  change_30d: number | null;
+}
+
 // --- Source health tracking ---
 
 export interface SourceHealth {

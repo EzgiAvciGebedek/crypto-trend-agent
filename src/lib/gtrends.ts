@@ -116,6 +116,44 @@ async function interestForTerms(terms: string[], geo: string): Promise<InterestP
   });
 }
 
+// --- Overall crypto search interest (single broad term) ---
+// Uses the localized "crypto" word (priceKeywords[1]) over a ~40-day daily window and
+// computes 1-day / 7-day / 30-day % changes — a proxy for how the whole crypto search
+// market is moving in each country.
+export interface OverallInterest {
+  score: number | null; // most recent interest value (0-100)
+  change1d: number | null;
+  change7d: number | null;
+  change30d: number | null;
+}
+
+export async function overallCryptoInterest(market: Market): Promise<OverallInterest | null> {
+  const term = market.priceKeywords[1] || "crypto"; // NL "crypto", DE "krypto", ES "cripto", ...
+  const opts: Record<string, unknown> = {
+    keyword: term,
+    startTime: new Date(Date.now() - 40 * 864e5),
+  };
+  if (market.trendsGeo) opts.geo = market.trendsGeo;
+
+  const res = await safeCall<IotResponse>(g.interestOverTime as never, opts);
+  const timeline = res?.default?.timelineData?.filter((p) => Array.isArray(p.value)) ?? [];
+  if (timeline.length < 2) return null;
+
+  const vals = timeline.map((p) => p.value?.[0] ?? 0);
+  const n = vals.length;
+  const last = vals[n - 1];
+  const at = (back: number): number | null => (n - 1 - back >= 0 ? vals[n - 1 - back] : null);
+  const pct = (from: number | null): number | null =>
+    from !== null && from > 0 ? ((last - from) / from) * 100 : null;
+
+  return {
+    score: last ?? null,
+    change1d: pct(at(1)),
+    change7d: pct(at(7)),
+    change30d: pct(at(30)),
+  };
+}
+
 // --- relatedQueries (rising) ---
 
 interface RqResponse {

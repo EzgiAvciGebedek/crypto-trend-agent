@@ -14,7 +14,7 @@ import { COMPETITORS } from "@/config/themes";
 import { getGlobalSignals, type GlobalSignals } from "./coingecko";
 import { getRedditSignal, type RedditSignal } from "./reddit";
 import { fetchMarketNews, countMentions, extractNewsKeywords } from "./rss";
-import { collectMarketTrends } from "./gtrends";
+import { collectMarketTrends, overallCryptoInterest } from "./gtrends";
 import { assembleMarketPackage } from "./assemble";
 import { analyzeMarket, isClaudeConfigured } from "./claude";
 import {
@@ -23,6 +23,7 @@ import {
   saveRecommendations,
   saveSummary,
   saveHealth,
+  saveCryptoOverall,
   getYesterdayMentions,
 } from "./store";
 import type { MarketMetric, Recommendation, SourceHealth, RisingQuery } from "./types";
@@ -118,6 +119,20 @@ async function processMarket(
       genericRising: t.genericRising,
     };
     await saveSnapshot({ date, market_code: market.code, source: "gtrends_interest", raw_data: { interest: t.interest, rising: t.rising, dailyCrypto: t.dailyCrypto, genericInterest: t.genericInterest } });
+
+    // Overall crypto search interest (1d/7d/30d change) — for the Overview cards
+    const overall = await overallCryptoInterest(market);
+    if (overall) {
+      await saveCryptoOverall({
+        date,
+        market_code: market.code,
+        score: overall.score,
+        change_1d: overall.change1d,
+        change_7d: overall.change7d,
+        change_30d: overall.change30d,
+      });
+      health.push({ source: `gtrends_overall:${market.code}`, ok: true, detail: `1d/7d/30d` });
+    }
   }
 
   // market_metrics: news mentions + (if any) trends interest/rising + generic terms
