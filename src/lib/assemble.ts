@@ -1,6 +1,6 @@
-// Karşılaştırmalı veri paketi oluşturucu.
-// Tüm kaynaklardan gelen sinyalleri pazar başına TEK pakete toplar; bu paket hem Claude
-// prompt'unu besler hem de market_metrics'e yazılacak türetilmiş metrikleri içerir.
+// Comparative data-package builder.
+// Collects signals from every source into ONE package per market; this package both feeds
+// the Claude prompt and holds the derived metrics that get written to market_metrics.
 
 import type { Market } from "@/config/markets";
 import type { InterestPoint } from "./gtrends";
@@ -16,18 +16,18 @@ export interface MarketDataPackage {
   rising: Record<string, RisingQuery[]>;
   dailyCrypto: string[];
 
-  // Yerel haber (bugün + dün farkı)
+  // Local news (today + change vs yesterday)
   newsMentions: Array<{ topic: string; count: number; change: number }>;
-  // Başlıklardan çıkarılan aday keyword'ler (coin + konu/olay)
+  // Candidate keywords extracted from headlines (coin + topic/event)
   newsKeywords: Array<{ keyword: string; count: number; coin: string }>;
-  // Coin-dışı jenerik/rakip terimlerin Trends arama ilgisi
+  // Trends search interest for non-coin generic/competitor terms
   genericSignals: Array<{ term: string; score: number | null; changePct: number | null; rising: string[] }>;
 
-  // Global bağlam
-  globalTrending: string[]; // CoinGecko trending coin adları
-  redditTopics: string[]; // Reddit'te yükselen konular
+  // Global context
+  globalTrending: string[]; // CoinGecko trending coin names
+  redditTopics: string[]; // rising topics on Reddit
 
-  // Kaynak sağlığı
+  // Source health
   failedSources: string[];
 }
 

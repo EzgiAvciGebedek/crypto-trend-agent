@@ -1,7 +1,7 @@
-// Dil bazlı RSS haber entegrasyonu.
-// - Tarayıcı benzeri User-Agent (bazı kaynaklar bot UA'ya 403 döner)
-// - Her feed timeout korumalı ve bağımsız try/catch (biri düşse diğerleri devam)
-// - Son 24 saatin başlıkları, pazar bazında coin bahsedilme sayımı
+// Language-specific RSS news integration.
+// - Browser-like User-Agent (some sources return 403 to bot UAs)
+// - Each feed is timeout-protected with its own try/catch (one failing doesn't stop others)
+// - Last-24h headlines, per-market coin mention counting
 
 import Parser from "rss-parser";
 import type { MarketCode } from "@/config/markets";
@@ -24,25 +24,25 @@ export interface NewsItem {
   title: string;
   link: string;
   isoDate: string | null;
-  source: string; // feed adı
+  source: string; // feed name
 }
 
 export interface MarketNews {
   market: MarketCode;
-  items: NewsItem[]; // son 24 saat
+  items: NewsItem[]; // last 24 hours
   health: SourceHealth[];
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function withinLastDay(isoDate: string | null | undefined): boolean {
-  if (!isoDate) return true; // tarih yoksa dahil et (bazı feed'ler tarih vermiyor)
+  if (!isoDate) return true; // include when no date (some feeds provide none)
   const t = new Date(isoDate).getTime();
   if (Number.isNaN(t)) return true;
   return Date.now() - t <= DAY_MS;
 }
 
-// Tek pazarın tüm feed'lerini çeker; feed başına bağımsız hata yönetimi.
+// Fetches all feeds for a single market; per-feed independent error handling.
 export async function fetchMarketNews(market: MarketCode): Promise<MarketNews> {
   const feeds = FEEDS[market] ?? [];
   const items: NewsItem[] = [];
@@ -60,7 +60,7 @@ export async function fetchMarketNews(market: MarketCode): Promise<MarketNews> {
           source: feed.name,
         }));
       items.push(...fresh);
-      health.push({ source: `rss:${market}:${feed.name}`, ok: true, detail: `${fresh.length} taze başlık` });
+      health.push({ source: `rss:${market}:${feed.name}`, ok: true, detail: `${fresh.length} fresh headlines` });
     } catch (err) {
       health.push({
         source: `rss:${market}:${feed.name}`,
@@ -73,14 +73,14 @@ export async function fetchMarketNews(market: MarketCode): Promise<MarketNews> {
   return { market, items, health };
 }
 
-// --- Bahsedilme sayımı ---
+// --- Mention counting ---
 
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-// Kısa/ikircikli alias'lar (yaygın kelimelerle çakışabilir) için yalıtılmış token şartı;
-// tüm alias'larda kelime sınırı kullanılır.
+// Word-boundary requirement for short/ambiguous aliases (which can clash with common words);
+// a word boundary is applied to all aliases.
 function buildMatcher(coin: Coin): RegExp {
   const terms = Array.from(new Set([coin.name.toLowerCase(), ...coin.aliases.map((a) => a.toLowerCase())]));
   const pattern = terms.map(escapeRe).join("|");
@@ -88,11 +88,11 @@ function buildMatcher(coin: Coin): RegExp {
 }
 
 export interface MentionCount {
-  topic: string; // coin adı
+  topic: string; // coin name
   count: number;
 }
 
-// Verilen başlık listesinde her coin için bahsedilme sayısı (en az 1 olanları döndürür).
+// Mention count per coin in the given headline list (returns those with at least 1).
 export function countMentions(items: NewsItem[], coins: Coin[] = CORE_COINS): MentionCount[] {
   const matchers = coins.map((c) => ({ name: c.name, re: buildMatcher(c) }));
   const counts = new Map<string, number>();
@@ -109,9 +109,9 @@ export function countMentions(items: NewsItem[], coins: Coin[] = CORE_COINS): Me
     .sort((a, b) => b.count - a.count);
 }
 
-// --- Başlıklardan aday keyword çıkarımı ---
-// Coin adı + bitişik konu/olay kelimesi kombinasyonları (ör. "bitcoin etf", "solana koers").
-// Dil bağımsız: 8 pazarın yaygın fonksiyon kelimeleri (stopword) elenir, coin ilk sıraya alınır.
+// --- Candidate keyword extraction from headlines ---
+// Coin name + adjacent topic/event word combinations (e.g. "bitcoin etf", "solana koers").
+// Language-agnostic: common function words (stopwords) of the 8 markets are filtered, coin goes first.
 
 const STOPWORDS = new Set<string>([
   // EN
@@ -142,19 +142,19 @@ function tokenize(s: string): string[] {
 
 function usableToken(t: string): boolean {
   if (t.length < 2) return false;
-  if (/^\d+$/.test(t)) return false; // salt sayı
+  if (/^\d+$/.test(t)) return false; // pure number
   return !STOPWORDS.has(t);
 }
 
 export interface NewsKeyword {
   keyword: string; // "bitcoin etf"
   count: number;
-  coin: string; // ilişkili coin adı
+  coin: string; // associated coin name
 }
 
-// Başlıklarda geçen coin alias'larının bitişiğindeki anlamlı kelimelerle 2'li kombinasyonlar üretir.
+// Builds 2-word combinations from meaningful words adjacent to coin aliases in headlines.
 export function extractNewsKeywords(items: NewsItem[], coins: Coin[] = CORE_COINS, limit = 20): NewsKeyword[] {
-  // alias -> coin adı
+  // alias -> coin name
   const aliasToCoin = new Map<string, string>();
   const aliasSet = new Set<string>();
   for (const c of coins) {
@@ -177,7 +177,7 @@ export function extractNewsKeywords(items: NewsItem[], coins: Coin[] = CORE_COIN
       const alias = toks[i];
       if (!aliasSet.has(alias)) continue;
       const coin = aliasToCoin.get(alias)!;
-      // bitişik kelimeler (önce/sonra), coin ilk sıraya alınır → arama sorgusu gibi okunur
+      // adjacent words (next/prev), coin placed first → reads like a search query
       for (const other of [toks[i + 1], toks[i - 1]]) {
         if (!other || aliasSet.has(other) || !usableToken(other)) continue;
         bump(`${alias} ${other}`, coin);
@@ -191,7 +191,7 @@ export function extractNewsKeywords(items: NewsItem[], coins: Coin[] = CORE_COIN
     .slice(0, limit);
 }
 
-// Bugün vs dün bahsedilme değişimi (dün verisi opsiyonel; yoksa change = count).
+// Today vs yesterday mention change (yesterday optional; if absent, change = count).
 export function mentionChange(
   today: MentionCount[],
   yesterday: Record<string, number> = {},

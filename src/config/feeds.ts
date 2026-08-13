@@ -1,18 +1,19 @@
-// Pazar bazlı, dil bazlı crypto haber RSS feed'leri.
-// URL'ler bozulabilir; ilk kurulumda test edildi (2026-08 canlı doğrulama).
-// Kullanıcı buradan kolayca feed ekleyip çıkarabilir. Sağlık testi: /api/health/feeds
+// Per-market, language-specific crypto news RSS feeds.
+// URLs can break; tested at initial setup (2026-08 live verification).
+// You can easily add/remove feeds here. Health test: /api/health/feeds
 //
-// NOT (2026-08 doğrulaması): Cointelegraph'ın yerelleştirilmiş feed'leri (de/fr/es/it/br)
-// artık 410 Gone dönüyor — kapatılmışlar, listeden çıkarıldı. Yerlerine çalışan alternatifler
-// eklendi. BTC-ECHO ve Portal do Bitcoin tarayıcı UA'sıyla bile 403 verdiği için çıkarıldı.
-// Tüm feed'ler tarayıcı benzeri User-Agent ile çekilir (bkz. src/lib/rss.ts).
+// NOTE (2026-08 verification): Cointelegraph's localized feeds (de/fr/es/it/br)
+// now return 410 Gone — they were discontinued and removed from the list. Working
+// alternatives were added instead. BTC-ECHO and Portal do Bitcoin were removed because
+// they return 403 even with a browser UA. All feeds are fetched with a browser-like
+// User-Agent (see src/lib/rss.ts).
 
 import type { MarketCode } from "./markets";
 
 export interface Feed {
   url: string;
   name: string;
-  note?: string; // dashboard'da gösterilecek uyarı/not (ör. yaklaşık sinyal)
+  note?: string; // warning/note shown in the dashboard (e.g. approximate signal)
 }
 
 export const FEEDS: Record<MarketCode, Feed[]> = {
@@ -38,8 +39,8 @@ export const FEEDS: Record<MarketCode, Feed[]> = {
     { url: "https://it.investing.com/rss/news_301.rss", name: "Investing.com IT (crypto)" },
   ],
   PT: [
-    { url: "https://livecoins.com.br/feed/", name: "Livecoins", note: "Brezilya PT — Portekiz pazarı için yaklaşık sinyal" },
-    { url: "https://portalcripto.com.br/feed/", name: "Portal Cripto", note: "Brezilya PT — yaklaşık sinyal" },
+    { url: "https://livecoins.com.br/feed/", name: "Livecoins", note: "Brazilian PT — approximate signal for the Portugal market" },
+    { url: "https://portalcripto.com.br/feed/", name: "Portal Cripto", note: "Brazilian PT — approximate signal" },
   ],
   NL: [
     { url: "https://www.crypto-insiders.nl/feed/", name: "Crypto Insiders" },

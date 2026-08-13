@@ -1,12 +1,12 @@
-// Günlük cron orkestrasyonu.
+// Daily cron orchestration.
 //
-// Mimari kararlar (bkz. Faz 4 kısıtı — kullanıcı "pazar rotasyonu" seçti):
-//  - Google Trends tek pazar için ~60sn+ sürebiliyor ve Vercel Hobby fonksiyonları 60sn'de kesiliyor.
-//    Bu yüzden Trends her gün SADECE birkaç pazar için toplanır; başlangıç indeksi günden güne
-//    döndürülür (rotate) → tüm pazarlar birkaç günde kapsanır.
-//  - RSS + CoinGecko + Reddit her pazar için her gün çalışır (hızlı).
-//  - Zaman bütçesi: bütçe dolunca kalan pazarlar Trends'siz/işlenmeden bırakılır; her pazar
-//    tamamlandıkça kaydedilir, böylece kısmi çalıştırma bile veri üretir.
+// Architecture decisions (Trends is slow and rate-limited; "market rotation" chosen):
+//  - Google Trends can take ~60s+ per market and Vercel Hobby functions cut off at 60s.
+//    So Trends is collected for ONLY a few markets each day; the starting index rotates
+//    day to day → all markets are covered over a few days.
+//  - RSS + CoinGecko + Reddit run for every market every day (fast).
+//  - Time budget: once the budget is spent the remaining markets are left unprocessed; each
+//    market is saved as it completes, so even a partial run produces data.
 
 import { MARKETS, type Market, type MarketCode } from "@/config/markets";
 import { CORE_COINS, type Coin } from "@/config/coins";
@@ -27,17 +27,17 @@ import {
 } from "./store";
 import type { MarketMetric, Recommendation, SourceHealth, RisingQuery } from "./types";
 
-const TIME_BUDGET_MS = 55_000; // Vercel Hobby 60sn limitinin altında güvenli pay
-const TRENDS_MARKETS_PER_DAY = 2; // her gün kaç pazar için Trends toplanacak
-const TRENDS_INTEREST_COINS = 10; // interestOverTime için (2 grup)
-const TRENDS_RISING_COINS = 4; // relatedQueries yalnızca en öncelikli birkaç coin
+const TIME_BUDGET_MS = 55_000; // safe margin under the Vercel Hobby 60s limit
+const TRENDS_MARKETS_PER_DAY = 2; // how many markets get Trends collected each day
+const TRENDS_INTEREST_COINS = 10; // for interestOverTime (2 groups)
+const TRENDS_RISING_COINS = 4; // relatedQueries for only the top few coins
 
 function dayOfYear(d: Date): number {
   const start = Date.UTC(d.getUTCFullYear(), 0, 0);
   return Math.floor((d.getTime() - start) / 86_400_000);
 }
 
-// Bugün Trends toplanacak pazarları rotasyonla seçer (EU-EN global geo'suz olduğu için hariç).
+// Rotationally selects today's Trends markets (excludes EU-EN since it has no geo).
 function trendsMarketsForToday(date: Date): Set<MarketCode> {
   const geoMarkets = MARKETS.filter((m) => m.trendsGeo);
   const offset = dayOfYear(date) * TRENDS_MARKETS_PER_DAY;
@@ -57,7 +57,7 @@ export interface DailyResult {
   health: SourceHealth[];
 }
 
-// Global bağlam: CoinGecko trending'e giren yeni coinleri çekirdek listeye ekler.
+// Global context: adds new coins that entered CoinGecko trending to the core list.
 function todaysCoinList(global: GlobalSignals): Coin[] {
   const coreIds = new Set(CORE_COINS.map((c) => c.id));
   const extra: Coin[] = global.trending
@@ -79,7 +79,7 @@ async function processMarket(
   const health: SourceHealth[] = [];
   const failedSources: string[] = [];
 
-  // Yerel haber
+  // Local news
   const news = await fetchMarketNews(market.code);
   health.push(...news.health);
   failedSources.push(...news.health.filter((h) => !h.ok).map((h) => h.source));
@@ -87,10 +87,10 @@ async function processMarket(
   const newsKeywords = extractNewsKeywords(news.items, coins);
   await saveSnapshot({ date, market_code: market.code, source: "rss", raw_data: news.items.slice(0, 40) });
 
-  // Jenerik/rakip Trends terimleri (arama ilgisi için): rakip markalar + o dilin jenerik seed'leri
+  // Generic/competitor Trends terms (for search interest): competitor brands + the language's generic seeds
   const genericTerms = [...COMPETITORS.slice(0, 3), ...market.genericSeeds];
 
-  // Google Trends (rotasyona dahilse)
+  // Google Trends (if part of today's rotation)
   type GenericSignal = { term: string; score: number | null; changePct: number | null; rising: string[] };
   let trends = {
     available: false,
@@ -120,7 +120,7 @@ async function processMarket(
     await saveSnapshot({ date, market_code: market.code, source: "gtrends_interest", raw_data: { interest: t.interest, rising: t.rising, dailyCrypto: t.dailyCrypto, genericInterest: t.genericInterest } });
   }
 
-  // market_metrics: haber bahsi + (varsa) trends ilgi/rising + jenerik terimler
+  // market_metrics: news mentions + (if any) trends interest/rising + generic terms
   const yMap = await getYesterdayMentions(market.code, yesterday);
   const interestByCoin = new Map(trends.interest.map((i: { coin: string; score: number | null; changePct: number | null }) => [i.coin, i]));
   const topics = new Set<string>([...mentions.map((m) => m.topic), ...trends.interest.map((i: { coin: string }) => i.coin)]);
@@ -138,7 +138,7 @@ async function processMarket(
       rising_queries: trends.rising[topic] ?? [],
     };
   });
-  // Jenerik/rakip terimleri de metrik olarak yaz (coin_or_topic = terim)
+  // Also write generic/competitor terms as metrics (coin_or_topic = term)
   for (const gi of trends.genericInterest) {
     metricRows.push({
       date,
@@ -160,7 +160,7 @@ async function processMarket(
     rising: (trends.genericRising[gi.coin] ?? []).map((r) => r.query),
   }));
 
-  // Claude analizi
+  // Claude analysis
   const pkg = assembleMarketPackage({
     date,
     market,
@@ -189,7 +189,7 @@ async function processMarket(
         }));
         await saveRecommendations(recs);
         await saveSummary({ date, market_code: market.code, summary: analysis.marketSummary });
-        health.push({ source: `claude:${market.code}`, ok: true, detail: `${recs.length} öneri` });
+        health.push({ source: `claude:${market.code}`, ok: true, detail: `${recs.length} recommendations` });
       }
     } catch (err) {
       health.push({ source: `claude:${market.code}`, ok: false, detail: err instanceof Error ? err.message : String(err) });
@@ -200,9 +200,9 @@ async function processMarket(
 }
 
 export interface RunOptions {
-  onlyMarket?: MarketCode; // sadece bu pazarı işle (manuel tek-pazar yenileme)
-  skipTrends?: boolean; // Trends'i atla (hız için)
-  forceTrends?: boolean; // rotasyona bakma, seçili pazar(lar) için Trends topla
+  onlyMarket?: MarketCode; // process only this market (manual single-market refresh)
+  skipTrends?: boolean; // skip Trends (for speed)
+  forceTrends?: boolean; // ignore rotation, collect Trends for the selected market(s)
 }
 
 export async function runDaily(opts: RunOptions = {}): Promise<DailyResult> {
@@ -213,7 +213,7 @@ export async function runDaily(opts: RunOptions = {}): Promise<DailyResult> {
 
   const allHealth: SourceHealth[] = [];
 
-  // 1) Global sinyaller
+  // 1) Global signals
   const global = await getGlobalSignals();
   allHealth.push({ source: "coingecko", ok: global.ok, detail: global.error });
   if (global.ok) await saveSnapshot({ date, market_code: "GLOBAL", source: "coingecko", raw_data: { trending: global.trending, markets: global.markets.slice(0, 50) } });
@@ -225,7 +225,7 @@ export async function runDaily(opts: RunOptions = {}): Promise<DailyResult> {
   const coins = todaysCoinList(global);
   const trendsToday = trendsMarketsForToday(now);
 
-  // 2) İşlenecek pazar sırası: tek pazar istendiyse sadece o; yoksa rotasyonlu sıra.
+  // 2) Order of markets to process: only the requested one if given; otherwise rotated order.
   const rotate = dayOfYear(now) % MARKETS.length;
   const ordered = opts.onlyMarket
     ? MARKETS.filter((m) => m.code === opts.onlyMarket)
@@ -235,7 +235,7 @@ export async function runDaily(opts: RunOptions = {}): Promise<DailyResult> {
   const skipped: MarketCode[] = [];
 
   for (const market of ordered) {
-    // Tek pazar modunda bütçe kontrolü uygulama (kullanıcı bilerek tetikledi).
+    // No budget check in single-market mode (the user triggered it intentionally).
     if (!opts.onlyMarket && Date.now() - started > TIME_BUDGET_MS) {
       skipped.push(market.code);
       continue;

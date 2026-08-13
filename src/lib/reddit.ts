@@ -1,12 +1,12 @@
-// Reddit — EU-EN pazarının sosyal sinyali.
+// Reddit — social signal for the EU-EN market.
 //
-// GERÇEK (2026-08 test): Reddit artık kimliksiz JSON erişimini (özellikle bulut IP'lerinden)
-// 403 ile blokluyor — spec'in "key gerektirmez" varsayımı güncel değil. Bu yüzden:
-//   - REDDIT_CLIENT_ID + REDDIT_CLIENT_SECRET varsa → app-only OAuth (userless) ile erişilir (ücretsiz).
-//   - Yoksa public JSON denenir (Vercel'de büyük olasılıkla 403) → temiz degrade.
-//   - Her durumda HTML/403 tespiti → boş sonuç + health fail, akış durmaz.
+// REALITY (2026-08 test): Reddit now blocks unauthenticated JSON access (especially from cloud IPs)
+// with 403 — the "no key required" assumption is outdated. So:
+//   - If REDDIT_CLIENT_ID + REDDIT_CLIENT_SECRET exist → access via app-only OAuth (userless, free).
+//   - Otherwise try public JSON (likely 403 on Vercel) → clean degrade.
+//   - In every case HTML/403 detection → empty result + health fail, the flow doesn't stop.
 //
-// Ücretsiz kimlik: https://www.reddit.com/prefs/apps → "script" veya "installed app" oluştur.
+// Free credentials: https://www.reddit.com/prefs/apps → create a "script" or "installed app".
 
 import { CORE_COINS, type Coin } from "@/config/coins";
 import type { SourceHealth } from "./types";
@@ -70,7 +70,7 @@ export interface RedditSignal {
   ok: boolean;
   hotPosts: RedditPost[];
   risingPosts: RedditPost[];
-  // Yükselen konu bahsedilmeleri (coin adı -> post sayısı), sosyal momentum göstergesi.
+  // Rising topic mentions (coin name -> post count), a social-momentum indicator.
   topicMentions: Array<{ topic: string; count: number }>;
   health: SourceHealth;
 }
@@ -113,8 +113,8 @@ export async function getRedditSignal(): Promise<RedditSignal> {
       detail: ok
         ? `${hotPosts.length} hot + ${risingPosts.length} rising`
         : token
-          ? "OAuth ile de erişilemedi"
-          : "403 (REDDIT_CLIENT_ID/SECRET ile OAuth önerilir)",
+          ? "unreachable even with OAuth"
+          : "403 (OAuth via REDDIT_CLIENT_ID/SECRET recommended)",
     },
   };
 }

@@ -5,7 +5,7 @@ import { fetchMarketNews } from "@/lib/rss";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-// Tüm feed'lerin sağlığını test eder. Faz 3 kurulum doğrulaması için.
+// Tests the health of all feeds. Useful for setup verification.
 export async function GET() {
   const results = [];
   for (const m of MARKETS) {

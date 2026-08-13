@@ -1,5 +1,5 @@
-// Minimal tip bildirimi — google-trends-api resmi tip getirmiyor.
-// Tüm metodlar opts alır ve JSON string (ya da hata durumunda HTML string) döndürür.
+// Minimal type declaration — google-trends-api ships no official types.
+// Every method takes opts and returns a JSON string (or an HTML string on error).
 declare module "google-trends-api" {
   type TrendsFn = (opts: Record<string, unknown>) => Promise<string>;
   interface GoogleTrends {

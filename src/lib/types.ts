@@ -11,7 +11,7 @@ export type SourceType =
 export type Action = "invest" | "watch" | "reduce";
 export type Confidence = "low" | "medium" | "high";
 
-// --- Supabase satır tipleri ---
+// --- Supabase row types ---
 
 export interface DailySnapshot {
   id?: number;
@@ -36,7 +36,7 @@ export interface MarketMetric {
 
 export interface RisingQuery {
   query: string;
-  value: number | string; // Trends "rising" değeri (sayı ya da "Breakout")
+  value: number | string; // Trends "rising" value (number or "Breakout")
 }
 
 export interface Recommendation {
@@ -58,7 +58,7 @@ export interface MarketSummary {
   summary: string;
 }
 
-// --- Kaynak sağlık takibi ---
+// --- Source health tracking ---
 
 export interface SourceHealth {
   source: string; // "gtrends:NL", "rss:DE:Cointelegraph DE", "coingecko", ...

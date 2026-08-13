@@ -1,5 +1,5 @@
-// CoinGecko entegrasyonu — global erken uyarı sinyali (ücretsiz katman).
-// İstekler arası 2-3 sn bekleme (rate limit). Opsiyonel demo key desteği.
+// CoinGecko integration — global early-warning signal (free tier).
+// 2-3s wait between requests (rate limit). Optional demo key support.
 
 import { fetchJson, sleep } from "./http";
 
@@ -88,7 +88,7 @@ export interface GlobalSignals {
   error?: string;
 }
 
-// İki isteği sırayla, aralarında bekleyerek çeker. Hata olursa boş+ok:false döner.
+// Fetches the two requests sequentially with a wait between them. On error returns empty + ok:false.
 export async function getGlobalSignals(): Promise<GlobalSignals> {
   try {
     const trending = await getTrending();
@@ -105,8 +105,8 @@ export async function getGlobalSignals(): Promise<GlobalSignals> {
   }
 }
 
-// Global trending'e giren, çekirdek listede olmayan coinleri döndürür —
-// o günün Google Trends sorgu listesine eklenmek üzere.
+// Returns coins that entered global trending and are not in the core list —
+// to be added to that day's Google Trends query list.
 export function newTrendingIds(trending: TrendingCoin[], coreIds: Set<string>): TrendingCoin[] {
   return trending.filter((t) => !coreIds.has(t.id));
 }

@@ -1,18 +1,18 @@
--- Crypto Trend Agent — Supabase şeması
--- Supabase SQL Editor'de bir kez çalıştır.
+-- Crypto Trend Agent — Supabase schema
+-- Run once in the Supabase SQL Editor.
 
--- Ham günlük anlık görüntüler (her kaynak / pazar için)
+-- Raw daily snapshots (per source / market)
 create table if not exists daily_snapshots (
   id          bigint generated always as identity primary key,
   date        date not null,
-  market_code text not null,            -- 'NL'..'EU-EN' veya 'GLOBAL'
+  market_code text not null,            -- 'NL'..'EU-EN' or 'GLOBAL'
   source      text not null,            -- gtrends_interest | gtrends_rising | gtrends_daily | coingecko | rss | reddit
   raw_data    jsonb not null,
   created_at  timestamptz not null default now()
 );
 create index if not exists idx_snapshots_date_market on daily_snapshots (date, market_code);
 
--- Pazar başına, coin/konu başına türetilmiş metrikler
+-- Derived metrics per market, per coin/topic
 create table if not exists market_metrics (
   id                    bigint generated always as identity primary key,
   date                  date not null,
@@ -29,7 +29,7 @@ create table if not exists market_metrics (
 create index if not exists idx_metrics_date_market on market_metrics (date, market_code);
 create index if not exists idx_metrics_topic on market_metrics (coin_or_topic);
 
--- Claude'un ürettiği keyword yatırım önerileri
+-- Keyword investment recommendations produced by Claude
 create table if not exists recommendations (
   id                  bigint generated always as identity primary key,
   date                date not null,
@@ -43,7 +43,7 @@ create table if not exists recommendations (
 );
 create index if not exists idx_recs_date_market on recommendations (date, market_code);
 
--- Pazar başına genel Claude yorumu
+-- General Claude commentary per market
 create table if not exists market_summaries (
   id           bigint generated always as identity primary key,
   date         date not null,
@@ -54,7 +54,7 @@ create table if not exists market_summaries (
 );
 create index if not exists idx_summaries_date on market_summaries (date);
 
--- Her çalıştırmadaki kaynak sağlığı (dashboard göstergesi için)
+-- Source health for each run (for the dashboard indicator)
 create table if not exists source_health (
   id          bigint generated always as identity primary key,
   date        date not null,

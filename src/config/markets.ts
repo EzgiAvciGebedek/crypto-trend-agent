@@ -1,5 +1,5 @@
-// Reklam verilen 8 pazar. trendsGeo = Google Trends ülke kodu ("" = global/karma).
-// Her pazarın kendi dili var; reklam metinleri ve önerilen keyword'ler bu dilde üretilir.
+// The 8 markets where ads run. trendsGeo = Google Trends country code ("" = global/mixed).
+// Each market has its own language; ad copy and suggested keywords are produced in that language.
 
 export type MarketCode = "NL" | "DE" | "FR" | "ES" | "IT" | "PL" | "PT" | "EU-EN";
 
@@ -7,13 +7,13 @@ export interface Market {
   code: MarketCode;
   country: string;
   language: string;
-  trendsGeo: string; // Google Trends geo kodu; "" ise global/karma sinyal
-  flag: string; // dashboard için emoji bayrak
-  // Bu pazarın dilinde "fiyat/kur" gibi crypto ile ilgili günlük trend filtresinde
-  // kullanılacak dil bazlı anahtar kelimeler.
+  trendsGeo: string; // Google Trends geo code; "" means global/mixed signal
+  flag: string; // emoji flag for the dashboard
+  // Language-specific keywords (like "price/rate") used to filter this market's
+  // crypto-related daily trending searches.
   priceKeywords: string[];
-  // Coin-dışı jenerik/platform Trends seed'leri (o dilde) — "arama ilgisi" için.
-  // Rakip marka adları dil-bağımsız olduğundan config/themes.ts'ten ayrıca eklenir.
+  // Non-coin generic/platform Trends seeds (in that language) — for "search interest".
+  // Competitor brand names are language-agnostic and added separately from config/themes.ts.
   genericSeeds: string[];
 }
 

@@ -1,6 +1,6 @@
 import { getHealth } from "@/lib/store";
 
-// Son çalıştırmadaki kaynak sağlığı göstergesi (özellikle Google Trends kırılganlığı için).
+// Source-health indicator for the last run (especially for Google Trends fragility).
 export default async function SourceHealthBar({ date }: { date: string }) {
   const health = await getHealth(date);
   if (health.length === 0) return null;

@@ -11,7 +11,7 @@ export default function CopyButton({ text, label = "Copy" }: { text: string; lab
           setCopied(true);
           setTimeout(() => setCopied(false), 1500);
         } catch {
-          /* pano erişimi yoksa sessizce geç */
+          /* silently ignore when clipboard access is unavailable */
         }
       }}
       className="rounded border border-neutral-300 dark:border-neutral-700 px-2 py-1 text-xs hover:bg-neutral-100 dark:hover:bg-neutral-800"

@@ -10,8 +10,8 @@ export default async function ComparePage({ searchParams }: { searchParams: Prom
   const topic = topicParam ?? "Bitcoin";
   const date = await latestDate();
 
-  // Son 7 günün metriklerini çek, her pazar için en güncel ilgi/bahsi al.
-  // eslint-disable-next-line react-hooks/purity -- server component; tarih hesabı istenen davranış
+  // Fetch the last 7 days of metrics, take the most recent interest/mentions per market.
+  // eslint-disable-next-line react-hooks/purity -- server component; date arithmetic is intended
   const since = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
   const rows = date ? await getTopicAcrossMarkets(topic, since) : [];
 

@@ -1,5 +1,5 @@
-// Supabase depolama katmanı. Tüm fonksiyonlar getSupabase() null ise graceful davranır
-// (yazımlar no-op, okumalar boş döner) — böylece DB yapılandırılmadan da app çalışır.
+// Supabase storage layer. All functions degrade gracefully when getSupabase() is null
+// (writes are no-ops, reads return empty) — so the app works without the DB configured.
 
 import { getSupabase } from "./supabase";
 import type { MarketCode } from "@/config/markets";
@@ -11,7 +11,7 @@ import type {
   SourceHealth,
 } from "./types";
 
-// --- Yazma ---
+// --- Writes ---
 
 export async function saveSnapshot(row: DailySnapshot): Promise<void> {
   const db = getSupabase();
@@ -28,7 +28,7 @@ export async function saveMetrics(rows: MarketMetric[]): Promise<void> {
 export async function saveRecommendations(rows: Recommendation[]): Promise<void> {
   const db = getSupabase();
   if (!db || rows.length === 0) return;
-  // Aynı gün tekrar çalışırsa çift kayıt olmasın: o pazar+gün önce silinir.
+  // Avoid duplicates on a re-run for the same day: delete that market+day first.
   const date = rows[0].date;
   const market = rows[0].market_code;
   await db.from("recommendations").delete().eq("date", date).eq("market_code", market);
@@ -48,7 +48,7 @@ export async function saveHealth(date: string, rows: SourceHealth[]): Promise<vo
   await db.from("source_health").insert(rows.map((r) => ({ date, source: r.source, ok: r.ok, detail: r.detail })));
 }
 
-// --- Okuma ---
+// --- Reads ---
 
 export async function latestDate(): Promise<string | null> {
   const db = getSupabase();
@@ -100,7 +100,7 @@ export async function getMetrics(date: string, market: MarketCode): Promise<Mark
   return (data ?? []) as MarketMetric[];
 }
 
-// Bir coin/konu için son N günün tüm pazarlardaki ilgi skorları (karşılaştırma/grafik).
+// Interest scores across all markets over the last N days for a coin/topic (comparison/chart).
 export async function getTopicAcrossMarkets(
   topic: string,
   sinceDate: string,
@@ -116,7 +116,7 @@ export async function getTopicAcrossMarkets(
   return (data ?? []) as MarketMetric[];
 }
 
-// Bir pazar+coin için zaman serisi (detay grafiği).
+// Time series for a market+coin (detail chart).
 export async function getMetricSeries(
   market: MarketCode,
   topic: string,
@@ -134,7 +134,7 @@ export async function getMetricSeries(
   return (data ?? []) as MarketMetric[];
 }
 
-// Dün için pazar+coin bahsedilme haritası (gün-gün değişim hesabı için).
+// Yesterday's market+coin mention map (for day-over-day change calculation).
 export async function getYesterdayMentions(
   market: MarketCode,
   yesterday: string,

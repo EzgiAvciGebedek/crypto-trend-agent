@@ -1,8 +1,8 @@
-// Claude analiz katmanı — pazar başına TEK istek (8 istek/gün toplam).
+// Claude analysis layer — ONE request per market (8 requests/day total).
 //
-// Model seçimi: skill rehberi gereği varsayılan claude-opus-5; maliyet için düşürme kullanıcı
-// kararıdır → ANTHROPIC_MODEL env ile değiştirilebilir (ör. claude-sonnet-5 / claude-haiku-4-5).
-// Güvenilir JSON için structured outputs (output_config.format) + fence-strip parse yedeği.
+// Model choice: defaults to claude-opus-5 per the skill guidance; downgrading for cost is the
+// user's decision → configurable via the ANTHROPIC_MODEL env (e.g. claude-sonnet-5 / claude-haiku-4-5).
+// For reliable JSON: structured outputs (output_config.format) + a fence-strip parse fallback.
 
 import Anthropic from "@anthropic-ai/sdk";
 import type { Market } from "@/config/markets";
@@ -10,7 +10,7 @@ import { GENERIC_THEMES, COMPETITORS } from "@/config/themes";
 import type { Action, Confidence } from "./types";
 import type { MarketDataPackage } from "./assemble";
 
-// Boş string ("" — .env.local'de tanımlı ama değersiz) de varsayılana düşsün → `||` kullan.
+// Empty string ("" — defined in .env.local but with no value) should fall back too → use `||`.
 const MODEL = process.env.ANTHROPIC_MODEL || "claude-opus-5";
 const EFFORT = (process.env.ANTHROPIC_EFFORT || "low") as "low" | "medium" | "high";
 
@@ -144,11 +144,11 @@ function userPrompt(pkg: MarketDataPackage): string {
 function parseAnalysis(text: string): MarketAnalysis {
   const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
   const parsed = JSON.parse(cleaned) as MarketAnalysis;
-  if (!Array.isArray(parsed.recommendations)) throw new Error("recommendations dizisi yok");
+  if (!Array.isArray(parsed.recommendations)) throw new Error("recommendations array missing");
   return parsed;
 }
 
-// Tek pazar için Claude analizi. API yoksa null döner (çağıran graceful ele alır).
+// Claude analysis for a single market. Returns null if the API is unset (caller handles gracefully).
 export async function analyzeMarket(pkg: MarketDataPackage): Promise<MarketAnalysis | null> {
   const c = getClient();
   if (!c) return null;

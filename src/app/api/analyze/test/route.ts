@@ -12,30 +12,30 @@ import { analyzeMarket, isClaudeConfigured } from "@/lib/claude";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-// Faz 5 uçtan uca tek pazar testi: kaynakları topla → paketle → Claude analiz et.
-// ?geo=NL (varsayılan). ?trends=0 ile Trends'i atla (hız/degrade testi).
+// End-to-end single-market test: collect sources → assemble → Claude analysis.
+// ?geo=NL (default). ?trends=0 skips Trends (speed/degrade test).
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const market = getMarket(url.searchParams.get("geo") ?? "NL");
-  if (!market) return NextResponse.json({ error: "geçersiz pazar" }, { status: 400 });
+  if (!market) return NextResponse.json({ error: "invalid market" }, { status: 400 });
 
   const useTrends = url.searchParams.get("trends") !== "0";
   const date = new Date().toISOString().slice(0, 10);
   const failedSources: string[] = [];
 
-  // Global sinyaller (CoinGecko + Reddit)
+  // Global signals (CoinGecko + Reddit)
   const global = await getGlobalSignals();
   if (!global.ok) failedSources.push("coingecko");
   const reddit = await getRedditSignal();
   if (!reddit.ok) failedSources.push("reddit");
 
-  // Yerel haber
+  // Local news
   const news = await fetchMarketNews(market.code);
   failedSources.push(...news.health.filter((h) => !h.ok).map((h) => h.source));
   const mentions = countMentions(news.items).map((m) => ({ topic: m.topic, count: m.count }));
   const newsKeywords = extractNewsKeywords(news.items);
 
-  // Google Trends (opsiyonel; minimal istek)
+  // Google Trends (optional; minimal request)
   let trends = { available: false, interest: [] as never[], rising: {}, dailyCrypto: [] as string[] };
   let genericSignals: Array<{ term: string; score: number | null; changePct: number | null; rising: string[] }> = [];
   if (useTrends) {
@@ -70,7 +70,7 @@ export async function GET(req: Request) {
 
   if (!isClaudeConfigured()) {
     return NextResponse.json({
-      note: "ANTHROPIC_API_KEY yok — Claude analizi atlandı. Toplanan paket döndürülüyor.",
+      note: "ANTHROPIC_API_KEY missing — Claude analysis skipped. Returning the collected package.",
       package: pkg,
     });
   }

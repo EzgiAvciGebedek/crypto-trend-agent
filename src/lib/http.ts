@@ -1,4 +1,4 @@
-// Ortak fetch yardımcıları: timeout, custom User-Agent, basit retry/backoff, bekleme.
+// Shared fetch helpers: timeout, custom User-Agent, simple retry/backoff, sleep.
 
 export const DEFAULT_TIMEOUT_MS = 10_000;
 export const USER_AGENT = "crypto-trend-agent/1.0";
@@ -10,7 +10,7 @@ export function sleep(ms: number): Promise<void> {
 export interface FetchOpts {
   timeoutMs?: number;
   headers?: Record<string, string>;
-  retries?: number; // ek deneme sayısı (0 = tek deneme)
+  retries?: number; // extra attempts (0 = single attempt)
 }
 
 export async function fetchWithTimeout(url: string, opts: FetchOpts = {}): Promise<Response> {

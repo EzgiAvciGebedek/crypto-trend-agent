@@ -1,12 +1,12 @@
-// Takip edilen coin listesi. Başlangıç: yaygın top coinler.
-// Her gün CoinGecko trending'den gelen yeni coinler runtime'da bu listeye eklenir
-// (bkz. cron akışı) — bu dosya statik "çekirdek" listedir.
+// Tracked coin list. Starting point: common top coins.
+// New coins from CoinGecko trending are added to this list at runtime each day
+// (see the cron flow) — this file is the static "core" list.
 
 export interface Coin {
-  id: string; // CoinGecko id (ör. "bitcoin")
-  symbol: string; // ör. "BTC"
-  name: string; // ör. "Bitcoin"
-  // Google Trends / RSS eşleştirmesinde aranacak takma adlar (küçük harf).
+  id: string; // CoinGecko id (e.g. "bitcoin")
+  symbol: string; // e.g. "BTC"
+  name: string; // e.g. "Bitcoin"
+  // Aliases to look for when matching against Google Trends / RSS (lowercase).
   aliases: string[];
 }
 
@@ -38,8 +38,8 @@ export const CORE_COINS: Coin[] = [
   { id: "pepe",          symbol: "PEPE", name: "Pepe",         aliases: ["pepe"] },
 ];
 
-// Google Trends'in aynı istekte en fazla 5 terim karşılaştırabilmesi için
-// coin listesini 5'li gruplara böler.
+// Splits the coin list into groups of 5 so Google Trends can compare at most
+// 5 terms in a single request.
 export function chunkCoins<T>(coins: T[], size = 5): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < coins.length; i += size) out.push(coins.slice(i, i + size));

@@ -34,7 +34,7 @@ export default async function MarketPage({ params }: { params: Promise<{ code: s
     mentions: m.news_mentions,
   }));
 
-  // Yükselen sorgular: metrics içindeki rising_queries'i düzleştir
+  // Rising queries: flatten rising_queries from the metrics
   const risingRows: Array<{ topic: string; query: string; value: RisingQuery["value"] }> = [];
   for (const m of metrics) {
     for (const rq of (m.rising_queries as RisingQuery[]) ?? []) {
@@ -42,9 +42,9 @@ export default async function MarketPage({ params }: { params: Promise<{ code: s
     }
   }
 
-  // --- Keyword → arama hacmi/ilgi değişimi eşlemesi ---
-  // (a) keyword bir rising query ile eşleşiyorsa Trends yükseliş değeri (keyword'e özel)
-  // (b) yoksa keyword'ün ait olduğu coin'in 7 günlük Trends ilgi değişimi %
+  // --- Keyword → search volume/interest change mapping ---
+  // (a) if the keyword matches a rising query, the Trends rise value (keyword-specific)
+  // (b) otherwise the 7-day Trends interest change % of the coin the keyword belongs to
   const risingByQuery = new Map<string, number | string>();
   const interestByCoin = new Map<string, { score: number | null; change: number | null }>();
   for (const m of metrics) {
@@ -56,7 +56,7 @@ export default async function MarketPage({ params }: { params: Promise<{ code: s
       risingByQuery.set(rq.query.toLowerCase(), rq.value);
     }
   }
-  // keyword içindeki coin alias'ından coin adını bul
+  // find the coin name from a coin alias inside the keyword
   const aliasToCoin = new Map<string, string>();
   for (const c of CORE_COINS) for (const a of [c.name.toLowerCase(), ...c.aliases]) aliasToCoin.set(a, c.name);
   function coinOfKeyword(kw: string): string | null {
@@ -66,14 +66,14 @@ export default async function MarketPage({ params }: { params: Promise<{ code: s
   type Change = { kind: "rising" | "interest" | "none"; value: number | string | null };
   function changeFor(kw: string): Change {
     const low = kw.toLowerCase();
-    // 1) keyword bir yükselen sorguyla birebir eşleşiyor mu (keyword'e özel, en güçlü)
+    // 1) exact match against a rising query (keyword-specific, strongest)
     const rv = risingByQuery.get(low);
     if (rv !== undefined) return { kind: "rising", value: rv };
-    // 2) coin alias'ı → coin'in ilgi değişimi
+    // 2) coin alias → the coin's interest change
     const coin = coinOfKeyword(kw);
     const iot = coin ? interestByCoin.get(coin) : undefined;
     if (iot && iot.change !== null) return { kind: "interest", value: iot.change };
-    // 3) jenerik/rakip terim: metrik topic'i (ör. "Bitvavo", "crypto kopen") keyword içinde geçiyor mu
+    // 3) generic/competitor term: does a metric topic (e.g. "Bitvavo", "crypto kopen") appear in the keyword
     let best: { term: string; change: number } | null = null;
     for (const [term, m] of interestByCoin) {
       if (m.change === null) continue;

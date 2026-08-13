@@ -1,7 +1,7 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-// Server-side Supabase istemcisi (service role key). Sadece server ortamında kullanılır.
-// Env eksikse null döner; çağıran taraf bunu graceful biçimde ele alır (Faz 1'de DB opsiyonel).
+// Server-side Supabase client (service role key). Used on the server only.
+// Returns null if env is missing; callers handle that gracefully (DB is optional).
 
 let cached: SupabaseClient | null = null;
 

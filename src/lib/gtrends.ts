@@ -1,12 +1,12 @@
-// Google Trends entegrasyonu — ANA KAYNAK ama en kırılgan olanı.
+// Google Trends integration — the PRIMARY source but the most fragile one.
 //
-// KRİTİK GERÇEKLER (2026-08 canlı test):
-//  - `google-trends-api` resmi değil; Google IP bazlı agresif rate-limit uygular.
-//  - Kota dolduğunda JSON yerine "Error 429" HTML sayfası döner → JSON.parse patlar.
-//    Bu yüzden her yanıt önce HTML mı diye kontrol edilir, sonra parse edilir.
-//  - Çözüm: istekler arası 4-6 sn bekleme, geo başına bağımsız try/catch,
-//    429'da exponential backoff, ve global bir "bütçe" ile kısmi sonuçla dön.
-//  - Tümü başarısız olursa çağıran taraf Trends'siz devam eder (RSS+CoinGecko+Reddit).
+// CRITICAL FACTS (2026-08 live test):
+//  - `google-trends-api` is unofficial; Google applies aggressive IP-based rate limiting.
+//  - When the quota is hit it returns an "Error 429" HTML page instead of JSON → JSON.parse blows up.
+//    So every response is first checked for HTML, then parsed.
+//  - Mitigation: 4-6s wait between requests, independent try/catch per geo,
+//    exponential backoff on 429, and a global "budget" to return partial results.
+//  - If everything fails, the caller proceeds without Trends (RSS+CoinGecko+Reddit).
 
 import gt from "google-trends-api";
 import type { Market } from "@/config/markets";
@@ -14,10 +14,10 @@ import { chunkCoins, type Coin } from "@/config/coins";
 import type { RisingQuery, SourceHealth } from "./types";
 import { sleep } from "./http";
 
-// google-trends-api CJS default export uyumu
+// google-trends-api CJS default export compatibility
 const g = (gt as unknown as { default?: typeof gt }).default ?? gt;
 
-const BASE_DELAY_MS = 4500; // istekler arası varsayılan bekleme
+const BASE_DELAY_MS = 4500; // default wait between requests
 const MAX_ATTEMPTS = 3;
 
 function looksLikeHtml(s: string): boolean {
@@ -25,7 +25,7 @@ function looksLikeHtml(s: string): boolean {
   return head.includes("<html") || head.includes("<!doctype");
 }
 
-// Trends çağrısını güvenli sarar: HTML/429 tespiti + backoff. Başarısızsa null.
+// Safely wraps a Trends call: HTML/429 detection + backoff. Returns null on failure.
 async function safeCall<T>(
   fn: (opts: Record<string, unknown>) => Promise<string>,
   opts: Record<string, unknown>,
@@ -34,7 +34,7 @@ async function safeCall<T>(
     try {
       const raw = await fn.call(g, opts);
       if (typeof raw !== "string" || looksLikeHtml(raw)) {
-        // 429 / consent / hata sayfası — backoff ve tekrar dene
+        // 429 / consent / error page — backoff and retry
         if (attempt < MAX_ATTEMPTS) await sleep(BASE_DELAY_MS * 2 ** attempt);
         continue;
       }
@@ -55,12 +55,12 @@ interface IotResponse {
 }
 
 export interface InterestPoint {
-  coin: string; // coin adı
-  score: number | null; // son değer (0-100)
-  changePct: number | null; // pencere başına göre % değişim
+  coin: string; // coin name
+  score: number | null; // last value (0-100)
+  changePct: number | null; // % change over the window
 }
 
-// Tek bir 5'li grup için interestOverTime. keywords sırası = value[] sırası.
+// interestOverTime for a single group of 5. keyword order = value[] order.
 async function interestForChunk(
   coins: Coin[],
   geo: string,
@@ -91,7 +91,7 @@ async function interestForChunk(
   });
 }
 
-// Jenerik/serbest metin terimleri için interestOverTime (coin nesnesi değil, düz string'ler).
+// interestOverTime for generic/free-text terms (plain strings, not coin objects).
 async function interestForTerms(terms: string[], geo: string): Promise<InterestPoint[] | null> {
   if (terms.length === 0) return null;
   const opts: Record<string, unknown> = {
@@ -132,13 +132,13 @@ export async function risingQueries(keyword: string, geo: string): Promise<Risin
   if (geo) opts.geo = geo;
 
   const res = await safeCall<RqResponse>(g.relatedQueries as never, opts);
-  // rankedList[1] = "rising" (yükselen), [0] = "top"
+  // rankedList[1] = "rising", [0] = "top"
   const rising = res?.default?.rankedList?.[1]?.rankedKeyword;
   if (!rising) return null;
   return rising.slice(0, 10).map((r) => ({ query: r.query, value: r.value }));
 }
 
-// --- dailyTrends (crypto filtreli) ---
+// --- dailyTrends (crypto-filtered) ---
 
 interface DtResponse {
   default?: {
@@ -148,12 +148,12 @@ interface DtResponse {
   };
 }
 
-// Ülkenin genel günlük trend'lerinden crypto ile ilgili olanları filtreler.
+// Filters the country's general daily trends down to crypto-related ones.
 export async function cryptoDailyTrends(
   market: Market,
   coins: Coin[],
 ): Promise<string[] | null> {
-  if (!market.trendsGeo) return null; // global geo için dailyTrends anlamlı değil
+  if (!market.trendsGeo) return null; // dailyTrends is meaningless for a global geo
 
   const res = await safeCall<DtResponse>(g.dailyTrends as never, { geo: market.trendsGeo });
   const searches = res?.default?.trendingSearchesDays?.[0]?.trendingSearches;
@@ -174,23 +174,23 @@ export async function cryptoDailyTrends(
   return hits;
 }
 
-// --- Tek pazar için tüm Trends sinyalleri ---
+// --- All Trends signals for a single market ---
 
 export interface MarketTrends {
   geo: string;
   interest: InterestPoint[];
-  rising: Record<string, RisingQuery[]>; // coin adı -> yükselen sorgular
+  rising: Record<string, RisingQuery[]>; // coin name -> rising queries
   dailyCrypto: string[];
-  // Coin-dışı jenerik/rakip terimler için Trends ilgi + yükselen sorgular
-  genericInterest: InterestPoint[]; // term -> skor/değişim
+  // Trends interest + rising queries for non-coin generic/competitor terms
+  genericInterest: InterestPoint[]; // term -> score/change
   genericRising: Record<string, RisingQuery[]>;
   health: SourceHealth[];
 }
 
-// Bir pazarın Trends verisini sırayla, aralıklı ve dayanıklı biçimde toplar.
-// risingForCoins: relatedQueries yalnızca bu (öncelikli) coinler için çekilir —
-// istek sayısını Vercel süre limiti içinde tutmak için (spec: istek sayısını sınırla).
-// genericTerms: coin-dışı jenerik/rakip terimler (arama ilgisi için).
+// Collects a market's Trends data sequentially, spaced out, and resiliently.
+// risingForCoins: relatedQueries is fetched only for these (priority) coins —
+// to keep the request count within Vercel's time limit (spec: limit request count).
+// genericTerms: non-coin generic/competitor terms (for search interest).
 export async function collectMarketTrends(
   market: Market,
   coins: Coin[],
@@ -201,7 +201,7 @@ export async function collectMarketTrends(
   const health: SourceHealth[] = [];
   const interest: InterestPoint[] = [];
 
-  // interestOverTime — 5'li gruplar
+  // interestOverTime — groups of 5
   const chunks = chunkCoins(coins, 5);
   let iotOk = 0;
   for (const chunk of chunks) {
@@ -215,10 +215,10 @@ export async function collectMarketTrends(
   health.push({
     source: `gtrends_interest:${market.code}`,
     ok: iotOk > 0,
-    detail: `${iotOk}/${chunks.length} grup`,
+    detail: `${iotOk}/${chunks.length} groups`,
   });
 
-  // relatedQueries (rising) — yalnızca öncelikli coinler
+  // relatedQueries (rising) — priority coins only
   const rising: Record<string, RisingQuery[]> = {};
   let rqOk = 0;
   for (const c of risingForCoins) {
@@ -235,7 +235,7 @@ export async function collectMarketTrends(
     detail: `${rqOk}/${risingForCoins.length} coin`,
   });
 
-  // Jenerik/rakip terimler — interest (5'li gruplar) + ilk 2 terim için rising
+  // Generic/competitor terms — interest (groups of 5) + rising for the first 2 terms
   const genericInterest: InterestPoint[] = [];
   const genericRising: Record<string, RisingQuery[]> = {};
   if (genericTerms.length > 0) {
@@ -253,17 +253,17 @@ export async function collectMarketTrends(
       if (rq) genericRising[term] = rq;
       await sleep(BASE_DELAY_MS);
     }
-    health.push({ source: `gtrends_generic:${market.code}`, ok: gOk > 0, detail: `${genericInterest.length} terim` });
+    health.push({ source: `gtrends_generic:${market.code}`, ok: gOk > 0, detail: `${genericInterest.length} terms` });
   }
 
-  // dailyTrends (crypto filtreli)
+  // dailyTrends (crypto-filtered)
   let dailyCrypto: string[] = [];
   const daily = await cryptoDailyTrends(market, coins);
   if (daily !== null) {
     dailyCrypto = daily;
     health.push({ source: `gtrends_daily:${market.code}`, ok: true, detail: `${daily.length} crypto trend` });
   } else if (geo) {
-    health.push({ source: `gtrends_daily:${market.code}`, ok: false, detail: "alınamadı" });
+    health.push({ source: `gtrends_daily:${market.code}`, ok: false, detail: "unavailable" });
   }
 
   return { geo, interest, rising, dailyCrypto, genericInterest, genericRising, health };

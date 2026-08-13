@@ -11,7 +11,7 @@ function pctClass(n: number | null): string {
   return n >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400";
 }
 
-// Async server component — CoinGecko global sinyalleri (canlı).
+// Async server component — CoinGecko global signals (live).
 export default async function GlobalSignals() {
   const { trending, markets, ok, error } = await getGlobalSignals();
 

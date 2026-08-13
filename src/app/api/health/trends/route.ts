@@ -6,16 +6,16 @@ import { collectMarketTrends } from "@/lib/gtrends";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-// Google Trends dayanıklılık testi. ?geo=NL (varsayılan NL).
-// Minimal istek: ilk 5 coin + Bitcoin için rising. 429 durumunda temiz ok:false döner.
+// Google Trends resilience test. ?geo=NL (defaults to NL).
+// Minimal request: first 5 coins + rising for Bitcoin. On 429 returns a clean ok:false.
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const code = url.searchParams.get("geo") ?? "NL";
   const market = getMarket(code);
-  if (!market) return NextResponse.json({ error: "geçersiz pazar" }, { status: 400 });
+  if (!market) return NextResponse.json({ error: "invalid market" }, { status: 400 });
 
   const coins = CORE_COINS.slice(0, 5);
-  const risingFor = CORE_COINS.slice(0, 1); // sadece Bitcoin
+  const risingFor = CORE_COINS.slice(0, 1); // Bitcoin only
 
   const t0 = Date.now();
   const trends = await collectMarketTrends(market, coins, risingFor);

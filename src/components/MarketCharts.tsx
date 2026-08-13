@@ -15,9 +15,9 @@ export interface TopicMetric {
   mentions: number;
 }
 
-// Erişilebilir, açık/koyu temada okunur renkler.
-const INTEREST = "#2563eb"; // mavi
-const MENTIONS = "#059669"; // yeşil
+// Accessible colors, readable in both light and dark themes.
+const INTEREST = "#2563eb"; // blue
+const MENTIONS = "#059669"; // green
 
 export default function MarketCharts({ data }: { data: TopicMetric[] }) {
   const interestData = data.filter((d) => d.interest !== null).slice(0, 10);
