@@ -102,6 +102,21 @@ async function processMarket(
     genericRising: {} as Record<string, RisingQuery[]>,
   };
   if (withTrends) {
+    // Overall crypto search interest FIRST (cheap, 1 call) so it completes within the
+    // function time budget even if the heavier collection below gets cut off.
+    const overall = await overallCryptoInterest(market);
+    if (overall) {
+      await saveCryptoOverall({
+        date,
+        market_code: market.code,
+        score: overall.score,
+        change_1d: overall.change1d,
+        change_7d: overall.change7d,
+        change_30d: overall.change30d,
+      });
+      health.push({ source: `gtrends_overall:${market.code}`, ok: true, detail: `1d/7d/30d` });
+    }
+
     const t = await collectMarketTrends(
       market,
       coins.slice(0, TRENDS_INTEREST_COINS),
@@ -119,20 +134,6 @@ async function processMarket(
       genericRising: t.genericRising,
     };
     await saveSnapshot({ date, market_code: market.code, source: "gtrends_interest", raw_data: { interest: t.interest, rising: t.rising, dailyCrypto: t.dailyCrypto, genericInterest: t.genericInterest } });
-
-    // Overall crypto search interest (1d/7d/30d change) — for the Overview cards
-    const overall = await overallCryptoInterest(market);
-    if (overall) {
-      await saveCryptoOverall({
-        date,
-        market_code: market.code,
-        score: overall.score,
-        change_1d: overall.change1d,
-        change_7d: overall.change7d,
-        change_30d: overall.change30d,
-      });
-      health.push({ source: `gtrends_overall:${market.code}`, ok: true, detail: `1d/7d/30d` });
-    }
   }
 
   // market_metrics: news mentions + (if any) trends interest/rising + generic terms
