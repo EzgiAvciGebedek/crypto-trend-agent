@@ -1,4 +1,4 @@
--- Finst Crypto Trend Agent — Supabase şeması
+-- Crypto Trend Agent — Supabase şeması
 -- Supabase SQL Editor'de bir kez çalıştır.
 
 -- Ham günlük anlık görüntüler (her kaynak / pazar için)

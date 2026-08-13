@@ -11,7 +11,7 @@
 import { CORE_COINS, type Coin } from "@/config/coins";
 import type { SourceHealth } from "./types";
 
-const UA = "web:finst-trend-agent:v1.0 (by /u/finst-agent)";
+const UA = "web:crypto-trend-agent:v1.0 (by /u/crypto-trend-agent)";
 
 interface RedditPost {
   title: string;

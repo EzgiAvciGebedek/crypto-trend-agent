@@ -1,7 +1,7 @@
 // Ortak fetch yardımcıları: timeout, custom User-Agent, basit retry/backoff, bekleme.
 
 export const DEFAULT_TIMEOUT_MS = 10_000;
-export const USER_AGENT = "finst-trend-agent/1.0";
+export const USER_AGENT = "crypto-trend-agent/1.0";
 
 export function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));

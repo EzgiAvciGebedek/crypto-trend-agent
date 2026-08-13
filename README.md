@@ -1,8 +1,13 @@
-# Finst Crypto Trend Agent
+# Crypto Trend Agent
 
-Finst'in 8 pazarında (NL, DE, FR, ES, IT, PL, PT, EU-EN) her gün ücretsiz kaynaklardan
-crypto arama trendi toplayıp **pazar ve dil bazlı Google Ads keyword yatırım önerileri** üreten
-bir agent. Ad group listesi önceden tanımlı değildir — öneriler trendlerden Claude tarafından üretilir.
+Belirli pazarlarda (her biri kendi diliyle) reklam veren bir crypto platformu için, her gün
+ücretsiz kaynaklardan crypto arama trendi toplayıp **pazar ve dil bazlı Google Ads keyword yatırım
+önerileri** üreten bir agent. Ad group listesi önceden tanımlı değildir — öneriler trendlerden
+Claude tarafından üretilir. Öneriler hem coin bazlı hem de coin-dışı jenerik/platform temalarını
+(hesap açma, rakip alternatifleri, ücret, güvenlik) kapsar.
+
+> Pazarlar `src/config/markets.ts` içinde tanımlıdır; ihtiyaca göre pazar ekleyip çıkarabilirsiniz.
+> Her pazarın kendi Trends geo'su, dili ve dil bazlı jenerik seed'leri vardır.
 
 ## Teknoloji
 
@@ -11,14 +16,17 @@ bir agent. Ad group listesi önceden tanımlı değildir — öneriler trendlerd
 - **Anthropic Claude API** — pazar başına analiz (varsayılan `claude-opus-5`)
 - **Vercel** (Hobby) — barındırma + günlük cron
 
+Arayüz dili İngilizce; analist yorumu (özet/gerekçe) İngilizce, reklam keyword'leri ise her pazarın
+dilinde üretilir (reklamlar o dilde yayınlandığı için).
+
 ## Veri Kaynakları
 
 | Kaynak | Ne için | Not |
 |---|---|---|
 | **Google Trends** (`google-trends-api`) | interestOverTime + rising queries + dailyTrends | Resmi değil, IP bazlı 429 verir → HTML/429 tespiti + backoff + **pazar rotasyonu** |
 | **CoinGecko** | global trending + fiyat/hacim (EUR) | Ücretsiz; trending'e giren coinler o günün Trends listesine eklenir |
-| **Dil bazlı RSS** | pazar başına yerel haber bahsedilmeleri | 2026-08 doğrulandı; ölen Cointelegraph feed'leri değiştirildi (bkz. `src/config/feeds.ts`) |
-| **Reddit** | EU-EN sosyal sinyali | Kimliksiz JSON artık **403** → OAuth (opsiyonel env) veya temiz degrade |
+| **Dil bazlı RSS** | pazar başına yerel haber bahsedilmeleri + aday keyword çıkarımı | Her pazarın kendi dilindeki kaynaklar (`src/config/feeds.ts`); ölü feed'ler test edilip atlanır |
+| **Reddit** | İngilizce sosyal sinyal | Kimliksiz JSON artık 403 → OAuth (opsiyonel env) veya temiz degrade |
 
 ### Önemli kaynak notları
 - **Google Trends kırılgan**: tek pazar ~60sn+ sürebiliyor, Vercel Hobby limiti 60sn. Bu yüzden Trends
@@ -26,8 +34,9 @@ bir agent. Ad group listesi önceden tanımlı değildir — öneriler trendlerd
   tüm kaynaklar her pazar için her gün çalışır. Trends tamamen başarısız olursa analiz RSS+CoinGecko+Reddit
   ile sürer ve dashboard'da uyarı gösterilir.
 - **Reddit** bulut IP'lerinden 403 verir → çalışması için `REDDIT_CLIENT_ID/SECRET` (ücretsiz) önerilir;
-  yoksa EU-EN sosyal sinyali atlanır, confidence düşürülür.
-- **PT (Portekiz)**: yerel feed bulunamadığından Brezilya PT feed'leri yaklaşık sinyal olarak kullanılır.
+  yoksa sosyal sinyal atlanır, confidence düşürülür.
+- **Yerel feed'i olmayan pazarlar** için yakın dildeki kaynaklar yaklaşık sinyal olarak kullanılabilir
+  (feed config'inde not düşülür).
 
 ## Kurulum
 
@@ -55,11 +64,12 @@ Rastgele bir dize. Vercel cron çağrılarını korur.
 ## Çalıştırma / Test
 
 - Dashboard: `npm run dev` → http://localhost:3000
-- Manuel analiz: ana sayfadaki **"Analizi şimdi çalıştır"** butonu (aynı origin POST).
+- Manuel analiz: ana sayfadaki **"Run analysis now"** butonu (aynı origin POST).
+- Tek pazar yenile: `POST /api/cron/daily?market=<KOD>` (opsiyonel `&trends=0` ile Trends'siz hızlı).
 - Kaynak sağlık testleri:
   - `GET /api/health/feeds` — tüm RSS feed'lerini test eder
-  - `GET /api/health/trends?geo=NL` — tek pazar Trends dayanıklılık testi
-  - `GET /api/analyze/test?geo=NL&trends=0` — uçtan uca tek pazar (Trends'siz hızlı)
+  - `GET /api/health/trends?geo=<KOD>` — tek pazar Trends dayanıklılık testi
+  - `GET /api/analyze/test?geo=<KOD>&trends=0` — uçtan uca tek pazar (Trends'siz hızlı)
 
 ## Deploy (Vercel)
 
@@ -77,7 +87,7 @@ Rastgele bir dize. Vercel cron çağrılarını korur.
 
 ```
 src/
-  config/    markets.ts · coins.ts · feeds.ts   (pazar/coin/feed tanımları)
+  config/    markets.ts · coins.ts · feeds.ts · themes.ts   (pazar/coin/feed/jenerik tema tanımları)
   lib/       coingecko · rss · gtrends · reddit · claude · assemble · store · cron
   app/       dashboard (/, /market/[code], /compare, /history)
              api/cron/daily · api/health/* · api/analyze/test
@@ -87,8 +97,9 @@ supabase/schema.sql
 ## Cron Akışı (`runDaily`)
 
 1. CoinGecko trending + markets → global sinyaller; yeni trending coinler listeye eklenir.
-2. Reddit → EU-EN sosyal sinyali.
-3. Pazarlar rotasyonlu sırayla, zaman bütçesiyle işlenir: RSS bahsedilme + (rotasyondaysa) Trends
-   → market_metrics + snapshots yazılır.
-4. Pazar başına Claude analizi (dün + bugün karşılaştırmalı) → recommendations + market_summaries.
+2. Reddit → İngilizce sosyal sinyali.
+3. Pazarlar rotasyonlu sırayla, zaman bütçesiyle işlenir: RSS bahsedilme + aday keyword çıkarımı +
+   (rotasyondaysa) Trends → market_metrics + snapshots yazılır.
+4. Pazar başına Claude analizi (dün + bugün karşılaştırmalı; coin + jenerik/platform temaları) →
+   recommendations + market_summaries.
 5. Kaynak sağlığı source_health'e yazılır; dashboard gösterir.

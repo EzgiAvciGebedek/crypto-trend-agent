@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Finst Trend Agent",
-  description: "Per-country/language crypto search trends and keyword investment recommendations",
+  title: "Crypto Trend Agent",
+  description: "Per-market/language crypto search trends and keyword investment recommendations",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -29,7 +29,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <div className="mx-auto max-w-6xl px-4 py-4 flex items-center justify-between gap-4">
             <Link href="/" className="flex items-center gap-2 font-semibold">
               <span className="text-lg">📈</span>
-              <span>Finst Trend Agent</span>
+              <span>Crypto Trend Agent</span>
             </Link>
             <nav className="flex items-center gap-4 text-sm text-neutral-600 dark:text-neutral-400">
               <Link href="/" className="hover:text-neutral-900 dark:hover:text-neutral-100">Markets</Link>

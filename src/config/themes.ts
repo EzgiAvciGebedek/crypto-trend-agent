@@ -1,5 +1,5 @@
 // Non-coin GENERIC / PLATFORM keyword themes and competitors.
-// Because Finst is a crypto platform (exchange), these high-intent acquisition keywords
+// Because the advertiser is a crypto platform (exchange), these high-intent acquisition keywords
 // matter as much as coin names and are not tied to a trend signal — they are "evergreen".
 // Claude localizes them to each market's language; the English examples below are only guidance.
 
@@ -27,7 +27,7 @@ export const GENERIC_THEMES: GenericTheme[] = [
     id: "competitor",
     label: "Competitor alternatives",
     intent: "User seeking an alternative to a competitor or comparing them (very high intent)",
-    examples: ["binance alternative", "coinbase alternative", "<competitor> vs finst"],
+    examples: ["binance alternative", "coinbase alternative", "better than <competitor>"],
   },
   {
     id: "how_to_buy",

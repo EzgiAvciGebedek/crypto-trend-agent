@@ -1,4 +1,4 @@
-// Finst'in reklam verdiği 8 pazar. trendsGeo = Google Trends ülke kodu ("" = global/karma).
+// Reklam verilen 8 pazar. trendsGeo = Google Trends ülke kodu ("" = global/karma).
 // Her pazarın kendi dili var; reklam metinleri ve önerilen keyword'ler bu dilde üretilir.
 
 export type MarketCode = "NL" | "DE" | "FR" | "ES" | "IT" | "PL" | "PT" | "EU-EN";
