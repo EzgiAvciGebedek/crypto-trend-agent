@@ -33,7 +33,11 @@ export default async function ComparePage({ searchParams }: { searchParams: Prom
     return { market: m.code, flag: m.flag, interest: v?.interest ?? null, mentions: v?.mentions ?? 0 };
   });
 
-  const hasData = data.some((d) => d.interest !== null || d.mentions > 0);
+  // Trends interest is the primary signal but is fragile (rotation covers only ~2 markets/day,
+  // and Trends itself rate-limits). Never show a fully blank chart when we have SOMETHING —
+  // fall back to news-mention counts, clearly labeled, matching the app's degrade-gracefully rule.
+  const hasInterest = data.some((d) => d.interest !== null);
+  const hasMentions = data.some((d) => d.mentions > 0);
 
   return (
     <div className="space-y-5">
@@ -53,9 +57,19 @@ export default async function ComparePage({ searchParams }: { searchParams: Prom
       </form>
 
       <section className="rounded-card border border-[var(--border)] bg-[var(--surface)] shadow-card p-4">
-        <h2 className="font-semibold mb-3">{topic} — Search Interest across 8 Markets</h2>
-        {hasData ? (
-          <CompareChart data={data} />
+        <h2 className="font-semibold mb-3">
+          {topic} — {hasInterest ? "Search Interest" : "News Mentions"} across 8 Markets
+        </h2>
+        {hasInterest ? (
+          <CompareChart data={data} metric="interest" />
+        ) : hasMentions ? (
+          <>
+            <p className="text-xs text-warning mb-2">
+              ⚠️ Google Trends interest score isn&apos;t available for this topic right now (rotation/rate-limit) —
+              showing 24h news-mention counts per market instead.
+            </p>
+            <CompareChart data={data} metric="mentions" />
+          </>
         ) : (
           <p className="text-sm text-[var(--muted)] italic">
             No data for this topic yet. Since Trends is collected via market rotation, a coin fills across all markets within a few days.
