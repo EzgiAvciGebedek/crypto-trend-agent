@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { crawlAllCompetitors, latestAcrossCompetitors } from "@/lib/competitors";
+import CompetitorFeedList from "./CompetitorFeedList";
 
 // Homepage summary: the 15 newest items crawled across all competitor sites.
 export default async function CompetitorFeed() {
@@ -26,22 +27,7 @@ export default async function CompetitorFeed() {
           No competitor content could be fetched right now (many of these sites are JS-rendered or block crawlers). See details for per-site status.
         </p>
       ) : (
-        <ol className="space-y-2">
-          {latest.map((it, i) => (
-            <li key={i} className="flex items-baseline gap-2 text-sm">
-              <span className="text-xs text-[var(--muted)] tabular-nums w-5 shrink-0">{i + 1}.</span>
-              <div className="min-w-0">
-                <a href={it.url} target="_blank" rel="noopener noreferrer" className="hover:underline">
-                  {it.title}
-                </a>
-                <span className="ml-2 text-xs text-[var(--muted)] whitespace-nowrap">
-                  {it.competitor}
-                  {it.isoDate && <> · {new Date(it.isoDate).toLocaleDateString()}</>}
-                </span>
-              </div>
-            </li>
-          ))}
-        </ol>
+        <CompetitorFeedList items={latest} />
       )}
     </section>
   );

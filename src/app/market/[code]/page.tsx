@@ -7,8 +7,9 @@ import { latestDateForMarket, getRecommendations, getSummary, getMetrics } from 
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { ActionBadge, ConfidenceDot } from "@/components/ui";
-import CopyButton from "@/components/CopyButton";
 import MarketCharts from "@/components/MarketCharts";
+import KeywordsTable from "@/components/KeywordsTable";
+import RisingQueriesTable from "@/components/RisingQueriesTable";
 import type { RisingQuery } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -95,71 +96,35 @@ export default async function MarketPage({
   }
 
   // Flatten every recommendation's keywords into one table with its bid action.
-  const BID_LABEL: Record<string, string> = { invest: "Raise bid", watch: "Watch", reduce: "Lower bid" };
   const keywordRows = recs.flatMap((r) =>
     (r.suggested_keywords ?? []).map((kw) => ({ keyword: kw, topic: r.topic, action: r.action, change: changeFor(kw) })),
   );
-  const allKeywords = keywordRows.map((k) => k.keyword).join("\n");
 
   return (
     <div className="space-y-6">
       <div>
-        <Link href={dateParam ? `/history?date=${dateParam}` : "/"} className="text-sm text-neutral-500 hover:underline">
+        <Link href={dateParam ? `/history?date=${dateParam}` : "/"} className="text-sm text-[var(--muted)] hover:underline">
           {dateParam ? "← Back to history" : "← All markets"}
         </Link>
         <h1 className="text-2xl font-bold mt-2 flex items-center gap-2">
           <span className="text-3xl">{market.flag}</span> {market.country}
         </h1>
-        <p className="text-sm text-neutral-500">
+        <p className="text-sm text-[var(--muted)]">
           {market.language} · Trends geo: {market.trendsGeo || "global"}{date && <span> · {date}</span>}
         </p>
-        {summary?.summary && <p className="mt-3 text-sm text-neutral-700 dark:text-neutral-300">{summary.summary}</p>}
+        {summary?.summary && <p className="mt-3 text-sm text-[var(--foreground)]/80">{summary.summary}</p>}
       </div>
 
       {keywordRows.length > 0 && (
         <section className="rounded-card border border-[var(--border)] bg-[var(--surface)] shadow-card p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold">Suggested Keywords <span className="text-xs font-normal text-neutral-500">({keywordRows.length} keywords)</span></h2>
-            <CopyButton text={allKeywords} label="Copy all" />
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-neutral-500 border-b border-[var(--border)]">
-                  <th className="py-1.5 pr-4">Keyword</th>
-                  <th className="py-1.5 pr-4">Topic</th>
-                  <th className="py-1.5 pr-4">Search Interest Δ</th>
-                  <th className="py-1.5">Bid Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {keywordRows.map((r, i) => (
-                  <tr key={i} className="border-b border-[var(--border)]">
-                    <td className="py-1.5 pr-4 font-mono">{r.keyword}</td>
-                    <td className="py-1.5 pr-4 text-neutral-500">{r.topic}</td>
-                    <td className="py-1.5 pr-4"><ChangeCell change={r.change} /></td>
-                    <td className="py-1.5">
-                      <span className="inline-flex items-center gap-1.5">
-                        <ActionBadge action={r.action} />
-                        <span className="text-xs text-neutral-600 dark:text-neutral-400">{BID_LABEL[r.action]}</span>
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <p className="mt-2 text-[11px] text-neutral-400">
-            Search Interest Δ: if the keyword matches a Google Trends &quot;rising query&quot;, its rise value;
-            otherwise the coin/term&apos;s Trends interest change over the last 7 days. &quot;—&quot; when no Trends data.
-          </p>
+          <KeywordsTable rows={keywordRows} />
         </section>
       )}
 
       <section className="rounded-card border border-[var(--border)] bg-[var(--surface)] shadow-card p-4">
         <h2 className="font-semibold mb-3">Recommendation Rationale</h2>
         {recs.length === 0 ? (
-          <p className="text-sm text-neutral-500 italic">No analysis data yet. Use &quot;Run analysis now&quot; on the home page.</p>
+          <p className="text-sm text-[var(--muted)] italic">No analysis data yet. Use &quot;Run analysis now&quot; on the home page.</p>
         ) : (
           <ul className="space-y-4">
             {recs.map((r) => (
@@ -169,9 +134,9 @@ export default async function MarketPage({
                   <span className="font-medium">{r.topic}</span>
                   <ConfidenceDot confidence={r.confidence} />
                 </div>
-                <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">{r.reasoning}</p>
+                <p className="mt-1 text-sm text-[var(--muted)]">{r.reasoning}</p>
                 {r.suggested_keywords?.length > 0 && (
-                  <p className="mt-1 text-xs text-neutral-400">{r.suggested_keywords.length} keywords — in the table above</p>
+                  <p className="mt-1 text-xs text-[var(--muted)]">{r.suggested_keywords.length} keywords — in the table above</p>
                 )}
               </li>
             ))}
@@ -184,31 +149,13 @@ export default async function MarketPage({
         {chartData.length > 0 ? (
           <MarketCharts data={chartData} />
         ) : (
-          <p className="text-sm text-neutral-500 italic">No metric data.</p>
+          <p className="text-sm text-[var(--muted)] italic">No metric data.</p>
         )}
       </section>
 
       {risingRows.length > 0 && (
         <section className="rounded-card border border-[var(--border)] bg-[var(--surface)] shadow-card p-4">
-          <h2 className="font-semibold mb-3">Rising Queries (Google Trends)</h2>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-neutral-500 border-b border-[var(--border)]">
-                  <th className="py-1.5 pr-4">Coin</th><th className="py-1.5 pr-4">Query</th><th className="py-1.5">Value</th>
-                </tr>
-              </thead>
-              <tbody>
-                {risingRows.slice(0, 40).map((r, i) => (
-                  <tr key={i} className="border-b border-[var(--border)]">
-                    <td className="py-1.5 pr-4 text-neutral-500">{r.topic}</td>
-                    <td className="py-1.5 pr-4 font-mono">{r.query}</td>
-                    <td className="py-1.5 text-positive">{typeof r.value === "number" ? `+${r.value}` : r.value}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <RisingQueriesTable rows={risingRows} />
         </section>
       )}
 
@@ -219,29 +166,6 @@ export default async function MarketPage({
   );
 }
 
-function ChangeCell({ change }: { change: { kind: "rising" | "interest" | "none"; value: number | string | null } }) {
-  if (change.kind === "rising") {
-    const v = change.value;
-    const label = typeof v === "number" ? `▲ +${v}%` : `🚀 ${v}`;
-    return (
-      <span className="text-positive tabular-nums" title="Google Trends rising query">
-        {label}
-      </span>
-    );
-  }
-  if (change.kind === "interest") {
-    const n = Number(change.value);
-    const cls = n > 0 ? "text-positive" : n < 0 ? "text-negative" : "text-[var(--muted)]";
-    const arrow = n > 0 ? "▲" : n < 0 ? "▼" : "→";
-    return (
-      <span className={`${cls} tabular-nums`} title="Coin/term Trends interest change over the last 7 days">
-        {arrow} {n > 0 ? "+" : ""}{n.toFixed(0)}% <span className="text-[10px] text-neutral-400">7d</span>
-      </span>
-    );
-  }
-  return <span className="text-neutral-400" title="No Trends data">—</span>;
-}
-
 async function LiveNews({ code, feedCount }: { code: import("@/config/markets").MarketCode; feedCount: number }) {
   const { items, health } = await fetchMarketNews(code);
   const failed = health.filter((h) => !h.ok);
@@ -249,16 +173,16 @@ async function LiveNews({ code, feedCount }: { code: import("@/config/markets").
     <section className="rounded-card border border-[var(--border)] bg-[var(--surface)] shadow-card p-4">
       <div className="flex items-center justify-between mb-3">
         <h2 className="font-semibold">Latest Headlines</h2>
-        <span className="text-xs text-neutral-500">{items.length} headlines · {feedCount} sources</span>
+        <span className="text-xs text-[var(--muted)]">{items.length} headlines · {feedCount} sources</span>
       </div>
       <ul className="space-y-2">
         {items.slice(0, 20).map((it, i) => (
           <li key={i} className="text-sm">
             <a href={it.link} target="_blank" rel="noopener noreferrer" className="hover:underline">{it.title}</a>
-            <span className="text-xs text-neutral-400 ml-2">{it.source}</span>
+            <span className="text-xs text-[var(--muted)] ml-2">{it.source}</span>
           </li>
         ))}
-        {items.length === 0 && <li className="text-sm text-neutral-500 italic">No headlines found.</li>}
+        {items.length === 0 && <li className="text-sm text-[var(--muted)] italic">No headlines found.</li>}
       </ul>
       {failed.length > 0 && (
         <p className="mt-3 text-xs text-negative">⚠️ {failed.length} sources failed.</p>
