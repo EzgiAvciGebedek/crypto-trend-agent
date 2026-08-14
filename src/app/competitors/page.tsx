@@ -61,7 +61,10 @@ function CompetitorCard({ r }: { r: CompetitorResult }) {
         </span>
       </div>
       {r.sourceUsed && (
-        <p className="mt-0.5 text-[11px] text-neutral-400 truncate">via {hostOf(r.sourceUsed)}</p>
+        <p className="mt-0.5 text-[11px] text-neutral-400 truncate">
+          via {hostOf(r.sourceUsed)}
+          {r.via && <span className="text-brand-500"> · rendered ({r.via})</span>}
+        </p>
       )}
 
       {r.keywords.length > 0 && (

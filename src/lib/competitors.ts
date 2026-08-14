@@ -13,6 +13,7 @@ import Parser from "rss-parser";
 import { COMPETITOR_SITES, type Competitor } from "@/config/competitors";
 import { fetchWithTimeout } from "./http";
 import { isSafePublicUrl, readTextCapped } from "./security";
+import { scraperConfigured, scraperFetchText, scraperName } from "./scraper";
 
 const BROWSER_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
@@ -39,21 +40,30 @@ export interface CompetitorResult {
   items: CompetitorItem[];
   keywords: Array<{ word: string; count: number }>;
   sourceUsed: string | null; // the URL that produced the items
+  via?: string; // proxy provider name when the render/anti-bot proxy was used
   ok: boolean;
   error?: string;
 }
 
 // --- RSS source ---
 
-async function fromRss(url: string): Promise<CompetitorItem[]> {
-  const parsed = await rss.parseURL(url);
-  return (parsed.items ?? [])
+function mapRssItems(items: Parser.Item[]): CompetitorItem[] {
+  return (items ?? [])
     .map((it) => ({
       title: (it.title ?? "").trim(),
       url: (it.link ?? "").trim(),
       isoDate: it.isoDate ?? it.pubDate ?? null,
     }))
     .filter((it) => it.title && it.url);
+}
+
+async function fromRss(url: string): Promise<CompetitorItem[]> {
+  return mapRssItems((await rss.parseURL(url)).items ?? []);
+}
+
+// Parse an already-fetched RSS/XML string (used for the proxy path).
+async function fromRssText(xml: string): Promise<CompetitorItem[]> {
+  return mapRssItems((await rss.parseString(xml)).items ?? []);
 }
 
 // --- HTML source (heuristic article-link extraction) ---
@@ -98,6 +108,11 @@ async function fromHtml(pageUrl: string): Promise<CompetitorItem[]> {
     headers: { "User-Agent": BROWSER_UA, Accept: "text/html,application/xhtml+xml" },
   });
   const html = await readTextCapped(res); // refuse oversized responses
+  return extractHtmlLinks(html, pageUrl);
+}
+
+// Pure extractor: pull article-like links from already-fetched HTML.
+function extractHtmlLinks(html: string, pageUrl: string): CompetitorItem[] {
   const base = new URL(pageUrl);
 
   const items: CompetitorItem[] = [];
@@ -179,6 +194,20 @@ function extractKeywords(titles: string[], ownName: string, limit = 8): Array<{ 
 // --- Per-competitor crawl ---
 
 async function crawlOne(c: Competitor): Promise<CompetitorResult> {
+  const finish = (items: CompetitorItem[], sourceUsed: string, via?: string): CompetitorResult => {
+    const trimmed = items.slice(0, MAX_ITEMS_PER_COMPETITOR);
+    return {
+      id: c.id,
+      name: c.name,
+      homepage: c.homepage,
+      items: trimmed,
+      keywords: extractKeywords(trimmed.map((i) => i.title), c.name),
+      sourceUsed,
+      via,
+      ok: true,
+    };
+  };
+
   let lastError = "no items found";
   for (const src of c.sources) {
     // SSRF guard: never fetch a non-public target, even if the config is edited.
@@ -186,22 +215,23 @@ async function crawlOne(c: Competitor): Promise<CompetitorResult> {
       lastError = "blocked non-public URL";
       continue;
     }
+    // 1) Direct fetch (free, fast).
     try {
       const items = src.type === "rss" ? await fromRss(src.url) : await fromHtml(src.url);
-      if (items.length > 0) {
-        const trimmed = items.slice(0, MAX_ITEMS_PER_COMPETITOR);
-        return {
-          id: c.id,
-          name: c.name,
-          homepage: c.homepage,
-          items: trimmed,
-          keywords: extractKeywords(trimmed.map((i) => i.title), c.name),
-          sourceUsed: src.url,
-          ok: true,
-        };
-      }
+      if (items.length > 0) return finish(items, src.url);
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
+    }
+    // 2) Proxy fallback — renders JS / bypasses anti-bot (Cloudflare). Opt-in via env.
+    // Also runs when the direct fetch returned 0 items (JS-rendered SPA).
+    if (scraperConfigured()) {
+      try {
+        const text = await scraperFetchText(src.url, { render: src.type === "html" });
+        const items = src.type === "rss" ? await fromRssText(text) : extractHtmlLinks(text, src.url);
+        if (items.length > 0) return finish(items, src.url, scraperName());
+      } catch (err) {
+        lastError = `proxy: ${err instanceof Error ? err.message : String(err)}`;
+      }
     }
   }
   return { id: c.id, name: c.name, homepage: c.homepage, items: [], keywords: [], sourceUsed: null, ok: false, error: lastError };
