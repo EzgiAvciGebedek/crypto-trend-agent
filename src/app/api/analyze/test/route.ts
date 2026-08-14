@@ -8,13 +8,28 @@ import { COMPETITORS } from "@/config/themes";
 import { getRedditSignal } from "@/lib/reddit";
 import { assembleMarketPackage } from "@/lib/assemble";
 import { analyzeMarket, isClaudeConfigured } from "@/lib/claude";
+import { allowByInterval } from "@/lib/security";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
+// This endpoint spends Claude tokens + hits third-party APIs, so it must not be open to the
+// public. Allow only the secret-authenticated caller or a same-origin request, then throttle.
+function authorized(req: Request): boolean {
+  const secret = process.env.CRON_SECRET;
+  const header = req.headers.get("authorization");
+  if (secret && header === `Bearer ${secret}`) return true;
+  return req.headers.get("sec-fetch-site") === "same-origin";
+}
+
 // End-to-end single-market test: collect sources → assemble → Claude analysis.
 // ?geo=NL (default). ?trends=0 skips Trends (speed/degrade test).
 export async function GET(req: Request) {
+  if (!authorized(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!allowByInterval("analyze:test", 15_000)) {
+    return NextResponse.json({ error: "rate_limited" }, { status: 429 });
+  }
+
   const url = new URL(req.url);
   const market = getMarket(url.searchParams.get("geo") ?? "NL");
   if (!market) return NextResponse.json({ error: "invalid market" }, { status: 400 });

@@ -24,6 +24,21 @@
 .DS_Store
 *.pem
 
+# secrets / credentials (defense-in-depth; never commit these)
+*.key
+*.p12
+*.pfx
+*.crt
+*.cert
+secrets.*
+*.local
+!.env.example
+
+# local scratch / temp
+scratch_*
+/scratchpad
+*.log
+
 # debug
 npm-debug.log*
 yarn-debug.log*
