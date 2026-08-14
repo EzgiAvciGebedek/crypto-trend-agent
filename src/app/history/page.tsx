@@ -58,9 +58,9 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
                   {summaryByMarket.get(m.code) && <p className="text-xs text-[var(--muted)] mb-2">{summaryByMarket.get(m.code)}</p>}
                   <ul className="space-y-1.5">
                     {(recsByMarket.get(m.code) ?? []).map((r) => (
-                      <li key={r.id ?? r.topic} className="flex items-center gap-1.5 text-xs">
+                      <li key={r.id ?? r.topic} className="flex items-center gap-1.5 text-xs min-w-0">
                         <ActionBadge action={r.action} />
-                        <span className="truncate">{r.topic}</span>
+                        <span className="min-w-0 flex-1 truncate">{r.topic}</span>
                         <ConfidenceDot confidence={r.confidence} />
                       </li>
                     ))}

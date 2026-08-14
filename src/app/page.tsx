@@ -84,9 +84,9 @@ export default async function HomePage() {
               {top.length > 0 && (
                 <ul className="mt-3 space-y-1">
                   {top.map((r) => (
-                    <li key={r.id ?? `${r.topic}`} className="flex items-center gap-1.5 text-xs">
+                    <li key={r.id ?? `${r.topic}`} className="flex items-center gap-1.5 text-xs min-w-0">
                       <ActionBadge action={r.action} />
-                      <span className="truncate">{r.topic}</span>
+                      <span className="min-w-0 flex-1 truncate">{r.topic}</span>
                     </li>
                   ))}
                 </ul>
