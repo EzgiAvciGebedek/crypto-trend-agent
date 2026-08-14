@@ -3,7 +3,7 @@ import { getMarket, MARKETS } from "@/config/markets";
 import { FEEDS } from "@/config/feeds";
 import { fetchMarketNews } from "@/lib/rss";
 import { CORE_COINS } from "@/config/coins";
-import { latestDate, getRecommendations, getSummary, getMetrics } from "@/lib/store";
+import { latestDateForMarket, getRecommendations, getSummary, getMetrics } from "@/lib/store";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { ActionBadge, ConfidenceDot } from "@/components/ui";
@@ -30,7 +30,9 @@ export default async function MarketPage({
   if (!market) notFound();
 
   const feeds = FEEDS[market.code] ?? [];
-  const date = dateParam ?? (await latestDate());
+  // Default to THIS market's latest analysis date (not the global latest), so partial
+  // daily runs don't blank out a market's detail page.
+  const date = dateParam ?? (await latestDateForMarket(market.code));
   const recs = date ? await getRecommendations(date, market.code) : [];
   const summary = date ? await getSummary(date, market.code) : null;
   const metrics = date ? await getMetrics(date, market.code) : [];

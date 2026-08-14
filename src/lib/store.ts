@@ -68,6 +68,21 @@ export async function latestDate(): Promise<string | null> {
   return data?.[0]?.date ?? null;
 }
 
+// Most recent date that has recommendations for a specific market. The market detail page
+// uses this (not the global latestDate) so a partial daily run doesn't leave a market's
+// detail page blank while an older, complete analysis exists.
+export async function latestDateForMarket(market: MarketCode): Promise<string | null> {
+  const db = getSupabase();
+  if (!db) return null;
+  const { data } = await db
+    .from("recommendations")
+    .select("date")
+    .eq("market_code", market)
+    .order("date", { ascending: false })
+    .limit(1);
+  return data?.[0]?.date ?? null;
+}
+
 export async function getRecommendations(date: string, market?: MarketCode): Promise<Recommendation[]> {
   const db = getSupabase();
   if (!db) return [];
