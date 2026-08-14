@@ -4,6 +4,7 @@ import { CORE_COINS } from "@/config/coins";
 import { collectMarketTrends } from "@/lib/gtrends";
 import { fetchMarketNews, countMentions, extractNewsKeywords } from "@/lib/rss";
 import { getGlobalSignals } from "@/lib/coingecko";
+import { getCmcSignals, formatGlobalMarket } from "@/lib/coinmarketcap";
 import { COMPETITORS } from "@/config/themes";
 import { getRedditSignal } from "@/lib/reddit";
 import { assembleMarketPackage } from "@/lib/assemble";
@@ -38,9 +39,11 @@ export async function GET(req: Request) {
   const date = new Date().toISOString().slice(0, 10);
   const failedSources: string[] = [];
 
-  // Global signals (CoinGecko + Reddit)
+  // Global signals (CoinGecko + CoinMarketCap + Reddit)
   const global = await getGlobalSignals();
   if (!global.ok) failedSources.push("coingecko");
+  const cmc = await getCmcSignals();
+  if (!cmc.ok) failedSources.push("coinmarketcap");
   const reddit = await getRedditSignal();
   if (!reddit.ok) failedSources.push("reddit");
 
@@ -79,6 +82,9 @@ export async function GET(req: Request) {
     newsKeywords,
     genericSignals,
     globalTrending: global.trending.slice(0, 10).map((c) => c.name),
+    cmcMovers: [...cmc.gainers.slice(0, 5), ...cmc.losers.slice(0, 5)]
+      .map((c) => `${c.name} ${(c.changePct24h as number) > 0 ? "+" : ""}${(c.changePct24h as number).toFixed(0)}%`),
+    cmcGlobal: formatGlobalMarket(cmc.global),
     redditTopics: reddit.topicMentions.slice(0, 8).map((t) => t.topic),
     failedSources,
   });

@@ -18,7 +18,7 @@ export default async function SourceHealthBar({ date }: { date: string }) {
         <span className="text-xs text-neutral-500">{ok}/{health.length} healthy</span>
       </div>
       {trendsFailedAll && (
-        <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">⚠️ Google Trends data unavailable — analysis ran with RSS + CoinGecko + Reddit.</p>
+        <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">⚠️ Google Trends data unavailable — analysis ran with RSS + CoinGecko + CoinMarketCap + Reddit.</p>
       )}
       {failed.length > 0 && (
         <details className="mt-1">

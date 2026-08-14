@@ -149,6 +149,8 @@ function userPrompt(pkg: MarketDataPackage): string {
     ``,
     `## Global Context`,
     `CoinGecko trending: ${pkg.globalTrending.map((t) => u(t, 60)).join(", ") || "none"}`,
+    `CoinMarketCap top 24h movers (independent price signal, top-100-by-market-cap only): ${pkg.cmcMovers.map((t) => u(t, 60)).join(", ") || "none"}`,
+    `CoinMarketCap global market: ${u(pkg.cmcGlobal, 160)}`,
     `Rising topics on Reddit (EU-EN social signal; usually spills into local markets within 1-2 days): ${pkg.redditTopics.map((t) => u(t, 80)).join(", ") || "none"}`,
     ``,
     `## Source Health`,

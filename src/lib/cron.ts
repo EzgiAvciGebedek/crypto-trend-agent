@@ -12,6 +12,7 @@ import { MARKETS, type Market, type MarketCode } from "@/config/markets";
 import { CORE_COINS, type Coin } from "@/config/coins";
 import { COMPETITORS } from "@/config/themes";
 import { getGlobalSignals, type GlobalSignals } from "./coingecko";
+import { getCmcSignals, formatGlobalMarket, type CmcSignals } from "./coinmarketcap";
 import { getRedditSignal, type RedditSignal } from "./reddit";
 import { fetchMarketNews, countMentions, extractNewsKeywords } from "./rss";
 import { collectMarketTrends, overallCryptoInterest } from "./gtrends";
@@ -75,6 +76,7 @@ async function processMarket(
   coins: Coin[],
   global: GlobalSignals,
   reddit: RedditSignal,
+  cmc: CmcSignals,
   withTrends: boolean,
 ): Promise<SourceHealth[]> {
   const health: SourceHealth[] = [];
@@ -186,6 +188,9 @@ async function processMarket(
     genericSignals,
     yesterdayMentions: yMap,
     globalTrending: global.trending.slice(0, 10).map((c) => c.name),
+    cmcMovers: [...cmc.gainers.slice(0, 5), ...cmc.losers.slice(0, 5)]
+      .map((c) => `${c.name} ${(c.changePct24h as number) > 0 ? "+" : ""}${(c.changePct24h as number).toFixed(0)}%`),
+    cmcGlobal: formatGlobalMarket(cmc.global),
     redditTopics: reddit.topicMentions.slice(0, 8).map((t) => t.topic),
     failedSources,
   });
@@ -238,6 +243,17 @@ export async function runDaily(opts: RunOptions = {}): Promise<DailyResult> {
   allHealth.push(reddit.health);
   if (reddit.ok) await saveSnapshot({ date, market_code: "EU-EN", source: "reddit", raw_data: { hot: reddit.hotPosts.slice(0, 25), rising: reddit.risingPosts.slice(0, 25) } });
 
+  const cmc = await getCmcSignals();
+  allHealth.push({ source: "coinmarketcap", ok: cmc.ok, detail: cmc.error });
+  if (cmc.ok) {
+    await saveSnapshot({
+      date,
+      market_code: "GLOBAL",
+      source: "coinmarketcap",
+      raw_data: { gainers: cmc.gainers, losers: cmc.losers, global: cmc.global },
+    });
+  }
+
   const coins = todaysCoinList(global);
   const trendsToday = trendsMarketsForToday(now);
 
@@ -260,7 +276,7 @@ export async function runDaily(opts: RunOptions = {}): Promise<DailyResult> {
       ? false
       : opts.forceTrends || (opts.onlyMarket ? true : false) || trendsToday.has(market.code);
     try {
-      const h = await processMarket(market, date, yesterday, coins, global, reddit, withTrends);
+      const h = await processMarket(market, date, yesterday, coins, global, reddit, cmc, withTrends);
       allHealth.push(...h);
       processed.push(market.code);
     } catch (err) {
