@@ -2,22 +2,34 @@
 
 /* ------------------------------------------------------------------ */
 /* Design tokens                                                       */
-/* Semantic surface/border/text tokens + a brand ramp. Light values on */
-/* :root, dark overrides under prefers-color-scheme. Tailwind v4 maps  */
-/* --color-* → bg-/text-/border- utilities, --radius-* → rounded-,     */
-/* --shadow-* → shadow-.                                               */
+/* Palette + type scale adapted from a modern fintech reference        */
+/* (teal accent, coral negative, near-black dark surface, Inter type). */
+/* Light values on :root, dark overrides under prefers-color-scheme.   */
+/* Tailwind v4 maps --color-* → bg-/text-/border- utilities,           */
+/* --radius-* → rounded-, --shadow-* → shadow-.                        */
 /* ------------------------------------------------------------------ */
 
 :root {
-  --background: #f7f7f8;
-  --foreground: #171717;
+  --background: #ffffff;
+  --foreground: #0f0f0f;
 
   /* semantic surfaces */
   --surface: #ffffff;
-  --surface-2: #f4f4f5;
-  --border: #e4e4e7;
-  --border-strong: #d4d4d8;
-  --muted: #71717a;
+  --surface-2: #f7f7f7;
+  --surface-3: #ebebeb;
+  --border: #ebebeb;
+  --border-strong: #d9d9d9;
+  --muted: #696969;
+
+  /* semantic state colors (mild = tinted background, solid = text/icon) */
+  --positive: #006c75;
+  --positive-mild: #e7f8f4;
+  --negative: #ff526f;
+  --negative-mild: #fdf1f3;
+  --warning: #995900;
+  --warning-mild: #fdf8dd;
+  --supporting: #6c54b6;
+  --supporting-mild: #f4f1fd;
 }
 
 @theme inline {
@@ -25,40 +37,62 @@
   --color-foreground: var(--foreground);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
   --color-border-token: var(--border);
   --color-border-strong: var(--border-strong);
   --color-muted: var(--muted);
 
-  /* brand accent ramp */
-  --color-brand-50: #eef2ff;
-  --color-brand-100: #e0e7ff;
-  --color-brand-200: #c7d2fe;
-  --color-brand-300: #a5b4fc;
-  --color-brand-400: #818cf8;
-  --color-brand-500: #6366f1;
-  --color-brand-600: #4f46e5;
-  --color-brand-700: #4338ca;
+  --color-positive: var(--positive);
+  --color-positive-mild: var(--positive-mild);
+  --color-negative: var(--negative);
+  --color-negative-mild: var(--negative-mild);
+  --color-warning: var(--warning);
+  --color-warning-mild: var(--warning-mild);
+  --color-supporting: var(--supporting);
+  --color-supporting-mild: var(--supporting-mild);
 
-  --font-sans: var(--font-geist-sans);
+  /* brand accent ramp — teal, anchored on the light/dark accent above */
+  --color-brand-50: #e7f8f4;
+  --color-brand-100: #ccf0ea;
+  --color-brand-200: #99e0d4;
+  --color-brand-300: #5fd1c4;
+  --color-brand-400: #2ec4b6;
+  --color-brand-500: #14b8b8;
+  --color-brand-600: #0d9488;
+  --color-brand-700: #006c75;
+
+  --font-sans: var(--font-inter);
   --font-mono: var(--font-geist-mono);
 
   /* shape + elevation */
-  --radius-card: 0.75rem;
-  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.04), 0 1px 3px rgb(0 0 0 / 0.05);
-  --shadow-card-hover: 0 4px 12px rgb(0 0 0 / 0.08), 0 2px 4px rgb(0 0 0 / 0.05);
+  --radius-card: 1rem;
+  --radius-control: 0.5rem;
+  --shadow-card: 0 4px 20px 0 rgb(0 0 0 / 0.08);
+  --shadow-card-hover: 0 4px 40px 0 rgb(0 0 0 / 0.13);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0b;
-    --foreground: #ededed;
-    --surface: #131316;
-    --surface-2: #1c1c20;
-    --border: #26262b;
-    --border-strong: #3a3a42;
-    --muted: #8b8b93;
-    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 1px 3px rgb(0 0 0 / 0.4);
-    --shadow-card-hover: 0 6px 20px rgb(0 0 0 / 0.5), 0 2px 6px rgb(0 0 0 / 0.4);
+    --background: #0f0f0f;
+    --foreground: #ffffff;
+    --surface: #1f1f1f;
+    --surface-2: #262626;
+    --surface-3: #333333;
+    --border: #333333;
+    --border-strong: #545454;
+    --muted: #a8a8a8;
+
+    --positive: #14b8b8;
+    --positive-mild: #002f33;
+    --negative: #ff526f;
+    --negative-mild: #552029;
+    --warning: #ffd06b;
+    --warning-mild: #3d2c00;
+    --supporting: #b399ff;
+    --supporting-mild: #35285d;
+
+    --shadow-card: 0 4px 20px 0 rgb(0 0 0 / 0.35);
+    --shadow-card-hover: 0 4px 40px 0 rgb(0 0 0 / 0.5);
   }
 }
 
@@ -86,13 +120,13 @@ body {
 
   /* Accessible, on-brand focus ring everywhere (keyboard only). */
   :focus-visible {
-    outline: 2px solid var(--color-brand-500);
+    outline: 2px solid var(--positive);
     outline-offset: 2px;
     border-radius: 4px;
   }
 
   ::selection {
-    background: color-mix(in oklab, var(--color-brand-500) 28%, transparent);
+    background: color-mix(in oklab, var(--positive) 28%, transparent);
   }
 
   /* Slim, unobtrusive scrollbars. */

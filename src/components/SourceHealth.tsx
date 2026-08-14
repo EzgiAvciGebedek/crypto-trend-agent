@@ -12,18 +12,18 @@ export default async function SourceHealthBar({ date }: { date: string }) {
     health.filter((h) => h.source.startsWith("gtrends")).every((h) => !h.ok);
 
   return (
-    <section className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-3 text-sm">
+    <section className="rounded-card border border-[var(--border)] bg-[var(--surface)] shadow-card p-3 text-sm">
       <div className="flex items-center justify-between">
         <span className="font-medium">Source Health</span>
-        <span className="text-xs text-neutral-500">{ok}/{health.length} healthy</span>
+        <span className="text-xs text-[var(--muted)]">{ok}/{health.length} healthy</span>
       </div>
       {trendsFailedAll && (
-        <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">⚠️ Google Trends data unavailable — analysis ran with RSS + CoinGecko + CoinMarketCap + Reddit.</p>
+        <p className="mt-2 text-xs text-warning">⚠️ Google Trends data unavailable — analysis ran with RSS, market-price signals and Reddit.</p>
       )}
       {failed.length > 0 && (
         <details className="mt-1">
-          <summary className="cursor-pointer text-xs text-red-600 dark:text-red-400">{failed.length} failed sources</summary>
-          <ul className="mt-1 space-y-0.5 text-xs text-neutral-500">
+          <summary className="cursor-pointer text-xs text-negative">{failed.length} failed sources</summary>
+          <ul className="mt-1 space-y-0.5 text-xs text-[var(--muted)]">
             {failed.map((h, i) => (
               <li key={i}>{h.source}{h.detail ? ` — ${String(h.detail).slice(0, 60)}` : ""}</li>
             ))}

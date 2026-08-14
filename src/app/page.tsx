@@ -34,7 +34,7 @@ export default async function HomePage() {
       </div>
 
       {!dbReady && (
-        <div className="rounded-md border border-amber-300 bg-amber-50 text-amber-900 px-4 py-3 text-sm dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200">
+        <div className="rounded-[var(--radius-control)] border border-warning/30 bg-warning-mild text-warning px-4 py-3 text-sm">
           ⚠️ Supabase is not configured. Add <code>SUPABASE_URL</code> and{" "}
           <code>SUPABASE_SERVICE_ROLE_KEY</code> to <code>.env.local</code> and run <code>supabase/schema.sql</code>.
         </div>
@@ -74,7 +74,7 @@ export default async function HomePage() {
               {summary ? (
                 <div className="mt-3 space-y-1">
                   {analysisDate && date && analysisDate !== date && (
-                    <p className="text-[11px] text-amber-600 dark:text-amber-400/80">Analysis from {analysisDate}</p>
+                    <p className="text-[11px] text-warning">Analysis from {analysisDate}</p>
                   )}
                   <p className="text-xs text-[var(--muted)] line-clamp-4">{summary}</p>
                 </div>

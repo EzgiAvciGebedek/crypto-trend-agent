@@ -117,7 +117,7 @@ export default async function MarketPage({
       </div>
 
       {keywordRows.length > 0 && (
-        <section className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4">
+        <section className="rounded-card border border-[var(--border)] bg-[var(--surface)] shadow-card p-4">
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-semibold">Suggested Keywords <span className="text-xs font-normal text-neutral-500">({keywordRows.length} keywords)</span></h2>
             <CopyButton text={allKeywords} label="Copy all" />
@@ -125,7 +125,7 @@ export default async function MarketPage({
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-xs text-neutral-500 border-b border-neutral-200 dark:border-neutral-800">
+                <tr className="text-left text-xs text-neutral-500 border-b border-[var(--border)]">
                   <th className="py-1.5 pr-4">Keyword</th>
                   <th className="py-1.5 pr-4">Topic</th>
                   <th className="py-1.5 pr-4">Search Interest Δ</th>
@@ -134,7 +134,7 @@ export default async function MarketPage({
               </thead>
               <tbody>
                 {keywordRows.map((r, i) => (
-                  <tr key={i} className="border-b border-neutral-100 dark:border-neutral-800/60">
+                  <tr key={i} className="border-b border-[var(--border)]">
                     <td className="py-1.5 pr-4 font-mono">{r.keyword}</td>
                     <td className="py-1.5 pr-4 text-neutral-500">{r.topic}</td>
                     <td className="py-1.5 pr-4"><ChangeCell change={r.change} /></td>
@@ -156,14 +156,14 @@ export default async function MarketPage({
         </section>
       )}
 
-      <section className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4">
+      <section className="rounded-card border border-[var(--border)] bg-[var(--surface)] shadow-card p-4">
         <h2 className="font-semibold mb-3">Recommendation Rationale</h2>
         {recs.length === 0 ? (
           <p className="text-sm text-neutral-500 italic">No analysis data yet. Use &quot;Run analysis now&quot; on the home page.</p>
         ) : (
           <ul className="space-y-4">
             {recs.map((r) => (
-              <li key={r.id ?? r.topic} className="border-b border-neutral-100 dark:border-neutral-800 pb-4 last:border-0 last:pb-0">
+              <li key={r.id ?? r.topic} className="border-b border-[var(--border)] pb-4 last:border-0 last:pb-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <ActionBadge action={r.action} />
                   <span className="font-medium">{r.topic}</span>
@@ -179,7 +179,7 @@ export default async function MarketPage({
         )}
       </section>
 
-      <section className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4">
+      <section className="rounded-card border border-[var(--border)] bg-[var(--surface)] shadow-card p-4">
         <h2 className="font-semibold mb-4">Signals</h2>
         {chartData.length > 0 ? (
           <MarketCharts data={chartData} />
@@ -189,21 +189,21 @@ export default async function MarketPage({
       </section>
 
       {risingRows.length > 0 && (
-        <section className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4">
+        <section className="rounded-card border border-[var(--border)] bg-[var(--surface)] shadow-card p-4">
           <h2 className="font-semibold mb-3">Rising Queries (Google Trends)</h2>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-xs text-neutral-500 border-b border-neutral-200 dark:border-neutral-800">
+                <tr className="text-left text-xs text-neutral-500 border-b border-[var(--border)]">
                   <th className="py-1.5 pr-4">Coin</th><th className="py-1.5 pr-4">Query</th><th className="py-1.5">Value</th>
                 </tr>
               </thead>
               <tbody>
                 {risingRows.slice(0, 40).map((r, i) => (
-                  <tr key={i} className="border-b border-neutral-100 dark:border-neutral-800/60">
+                  <tr key={i} className="border-b border-[var(--border)]">
                     <td className="py-1.5 pr-4 text-neutral-500">{r.topic}</td>
                     <td className="py-1.5 pr-4 font-mono">{r.query}</td>
-                    <td className="py-1.5 text-emerald-600 dark:text-emerald-400">{typeof r.value === "number" ? `+${r.value}` : r.value}</td>
+                    <td className="py-1.5 text-positive">{typeof r.value === "number" ? `+${r.value}` : r.value}</td>
                   </tr>
                 ))}
               </tbody>
@@ -212,7 +212,7 @@ export default async function MarketPage({
         </section>
       )}
 
-      <Suspense fallback={<div className="rounded-lg border border-neutral-200 dark:border-neutral-800 p-4 text-sm text-neutral-500">Loading news…</div>}>
+      <Suspense fallback={<div className="rounded-card border border-[var(--border)] p-4 text-sm text-[var(--muted)]">Loading news…</div>}>
         <LiveNews code={market.code} feedCount={feeds.length} />
       </Suspense>
     </div>
@@ -224,14 +224,14 @@ function ChangeCell({ change }: { change: { kind: "rising" | "interest" | "none"
     const v = change.value;
     const label = typeof v === "number" ? `▲ +${v}%` : `🚀 ${v}`;
     return (
-      <span className="text-emerald-600 dark:text-emerald-400 tabular-nums" title="Google Trends rising query">
+      <span className="text-positive tabular-nums" title="Google Trends rising query">
         {label}
       </span>
     );
   }
   if (change.kind === "interest") {
     const n = Number(change.value);
-    const cls = n > 0 ? "text-emerald-600 dark:text-emerald-400" : n < 0 ? "text-red-600 dark:text-red-400" : "text-neutral-500";
+    const cls = n > 0 ? "text-positive" : n < 0 ? "text-negative" : "text-[var(--muted)]";
     const arrow = n > 0 ? "▲" : n < 0 ? "▼" : "→";
     return (
       <span className={`${cls} tabular-nums`} title="Coin/term Trends interest change over the last 7 days">
@@ -246,7 +246,7 @@ async function LiveNews({ code, feedCount }: { code: import("@/config/markets").
   const { items, health } = await fetchMarketNews(code);
   const failed = health.filter((h) => !h.ok);
   return (
-    <section className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4">
+    <section className="rounded-card border border-[var(--border)] bg-[var(--surface)] shadow-card p-4">
       <div className="flex items-center justify-between mb-3">
         <h2 className="font-semibold">Latest Headlines</h2>
         <span className="text-xs text-neutral-500">{items.length} headlines · {feedCount} sources</span>
@@ -261,7 +261,7 @@ async function LiveNews({ code, feedCount }: { code: import("@/config/markets").
         {items.length === 0 && <li className="text-sm text-neutral-500 italic">No headlines found.</li>}
       </ul>
       {failed.length > 0 && (
-        <p className="mt-3 text-xs text-red-600 dark:text-red-400">⚠️ {failed.length} sources failed.</p>
+        <p className="mt-3 text-xs text-negative">⚠️ {failed.length} sources failed.</p>
       )}
     </section>
   );

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { MARKETS, getMarket } from "@/config/markets";
 import { availableDates, getRecommendations, getSummaries } from "@/lib/store";
-import { ActionBadge, ConfidenceDot } from "@/components/ui";
+import { ActionBadge, ConfidenceDot, Button } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -24,21 +24,21 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
     <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-bold">History</h1>
-        <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">Pick a date to view that day&apos;s recommendations.</p>
+        <p className="text-sm text-[var(--muted)] mt-1">Pick a date to view that day&apos;s recommendations.</p>
       </div>
 
       {dates.length === 0 ? (
-        <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-6 text-sm text-neutral-500 italic">
+        <div className="rounded-card border border-[var(--border)] bg-[var(--surface)] shadow-card p-6 text-sm text-[var(--muted)] italic">
           No days recorded yet. History accumulates here as analyses run.
         </div>
       ) : (
         <>
           <form className="flex items-center gap-2 flex-wrap">
-            <label className="text-sm text-neutral-500">Date:</label>
-            <select name="date" defaultValue={date} className="rounded border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-sm">
+            <label className="text-sm text-[var(--muted)]">Date:</label>
+            <select name="date" defaultValue={date} className="rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--surface)] px-2 py-1 text-sm">
               {dates.map((d) => <option key={d} value={d}>{d}</option>)}
             </select>
-            <button type="submit" className="rounded-md bg-neutral-900 text-white text-sm px-3 py-1.5 dark:bg-white dark:text-neutral-900">Show</button>
+            <Button size="sm" type="submit">Show</Button>
           </form>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -48,14 +48,14 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
                 <Link
                   key={m.code}
                   href={`/market/${m.code}?date=${date}`}
-                  className="block rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4 transition-colors hover:border-neutral-400 dark:hover:border-neutral-600"
+                  className="block rounded-card border border-[var(--border)] bg-[var(--surface)] shadow-card p-4 transition hover:-translate-y-0.5 hover:border-[var(--border-strong)] hover:shadow-card-hover"
                 >
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-xl">{market.flag}</span>
                     <span className="font-semibold">{market.country}</span>
-                    <span className="ml-auto text-xs text-neutral-400">View details →</span>
+                    <span className="ml-auto text-xs text-[var(--muted)]">View details →</span>
                   </div>
-                  {summaryByMarket.get(m.code) && <p className="text-xs text-neutral-600 dark:text-neutral-400 mb-2">{summaryByMarket.get(m.code)}</p>}
+                  {summaryByMarket.get(m.code) && <p className="text-xs text-[var(--muted)] mb-2">{summaryByMarket.get(m.code)}</p>}
                   <ul className="space-y-1.5">
                     {(recsByMarket.get(m.code) ?? []).map((r) => (
                       <li key={r.id ?? r.topic} className="flex items-center gap-1.5 text-xs">

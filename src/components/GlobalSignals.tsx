@@ -1,4 +1,6 @@
 import { getGlobalSignals } from "@/lib/coingecko";
+import { getCmcSignals } from "@/lib/coinmarketcap";
+import { combineGlobalSignals, type MergedMover, type MergedTrending } from "@/lib/globalMarket";
 
 function pct(n: number | null): string {
   if (n === null || Number.isNaN(n)) return "—";
@@ -7,65 +9,71 @@ function pct(n: number | null): string {
 }
 
 function pctClass(n: number | null): string {
-  if (n === null) return "text-neutral-500";
-  return n >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400";
+  if (n === null) return "text-[var(--muted)]";
+  return n >= 0 ? "text-positive" : "text-negative";
 }
 
-// Async server component — CoinGecko global signals (live).
+// Small dot marking a coin that showed up in both underlying signals — never names the
+// vendors, just communicates "independently corroborated" to the reader.
+function ConfirmedDot() {
+  return (
+    <span
+      className="inline-block h-1.5 w-1.5 rounded-full bg-supporting"
+      title="Confirmed by two independent signals"
+    />
+  );
+}
+
+// Blends two independent market-data providers into one "what's moving" view (no single
+// provider is named in the UI — see combineGlobalSignals for the merge logic).
 export default async function GlobalSignals() {
-  const { trending, markets, ok, error } = await getGlobalSignals();
+  const [cg, cmc] = await Promise.all([getGlobalSignals(), getCmcSignals()]);
 
-  const topMovers = [...markets]
-    .filter((m) => m.change24hPct !== null)
-    .sort((a, b) => Math.abs(b.change24hPct!) - Math.abs(a.change24hPct!))
-    .slice(0, 8);
-
-  if (!ok) {
+  if (!cg.ok) {
     return (
-      <section className="rounded-lg border border-red-300 bg-red-50 text-red-800 px-4 py-3 text-sm dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
-        ⚠️ Could not load CoinGecko data: {error}
+      <section className="rounded-card border border-negative/30 bg-negative-mild text-negative px-4 py-3 text-sm">
+        ⚠️ Could not load global market data: {cg.error}
       </section>
     );
   }
 
+  const combined = combineGlobalSignals(cg, cmc);
+  const topMovers: MergedMover[] = [...combined.gainers, ...combined.losers]
+    .sort((a, b) => Math.abs(b.changePct24h) - Math.abs(a.changePct24h))
+    .slice(0, 8);
+
   return (
     <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4">
-        <h2 className="font-semibold mb-3 flex items-center gap-2">
-          🔥 Global Trending <span className="text-xs font-normal text-neutral-500">(CoinGecko)</span>
-        </h2>
+      <div className="rounded-card border border-[var(--border)] bg-[var(--surface)] shadow-card p-4">
+        <h2 className="font-semibold mb-3 flex items-center gap-2">🔥 Global Trending</h2>
         <ul className="space-y-1.5">
-          {trending.slice(0, 10).map((c) => (
-            <li key={c.id} className="flex items-center justify-between text-sm">
+          {combined.trending.slice(0, 10).map((c: MergedTrending) => (
+            <li key={`${c.symbol}-${c.name}`} className="flex items-center justify-between text-sm">
               <span className="flex items-center gap-2">
+                {c.confirmed && <ConfirmedDot />}
                 <span className="font-medium">{c.name}</span>
-                <span className="text-xs text-neutral-500">{c.symbol}</span>
-                {c.marketCapRank && (
-                  <span className="text-[10px] text-neutral-400">#{c.marketCapRank}</span>
-                )}
+                <span className="text-xs text-[var(--muted)]">{c.symbol}</span>
+                {c.marketCapRank && <span className="text-[10px] text-[var(--muted)]">#{c.marketCapRank}</span>}
               </span>
-              <span className={`text-xs tabular-nums ${pctClass(c.priceChange24hUsd)}`}>
-                {pct(c.priceChange24hUsd)}
-              </span>
+              <span className={`text-xs tabular-nums ${pctClass(c.changePct24h)}`}>{pct(c.changePct24h)}</span>
             </li>
           ))}
         </ul>
       </div>
 
-      <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4">
+      <div className="rounded-card border border-[var(--border)] bg-[var(--surface)] shadow-card p-4">
         <h2 className="font-semibold mb-3 flex items-center gap-2">
-          📊 Top Movers <span className="text-xs font-normal text-neutral-500">(24h, EUR)</span>
+          📊 Top Movers <span className="text-xs font-normal text-[var(--muted)]">(24h)</span>
         </h2>
         <ul className="space-y-1.5">
           {topMovers.map((m) => (
-            <li key={m.id} className="flex items-center justify-between text-sm">
+            <li key={`${m.symbol}-${m.name}`} className="flex items-center justify-between text-sm">
               <span className="flex items-center gap-2">
+                {m.confirmed && <ConfirmedDot />}
                 <span className="font-medium">{m.name}</span>
-                <span className="text-xs text-neutral-500">{m.symbol}</span>
+                <span className="text-xs text-[var(--muted)]">{m.symbol}</span>
               </span>
-              <span className={`text-xs tabular-nums ${pctClass(m.change24hPct)}`}>
-                {pct(m.change24hPct)}
-              </span>
+              <span className={`text-xs tabular-nums ${pctClass(m.changePct24h)}`}>{pct(m.changePct24h)}</span>
             </li>
           ))}
         </ul>

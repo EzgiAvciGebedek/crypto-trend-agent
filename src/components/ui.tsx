@@ -96,14 +96,14 @@ export function Button({
 // Badges & chips
 // ---------------------------------------------------------------------------
 
-type Tone = "neutral" | "brand" | "emerald" | "amber" | "red";
+type Tone = "neutral" | "brand" | "positive" | "warning" | "negative";
 
 const TONE: Record<Tone, string> = {
   neutral: "bg-[var(--surface-2)] text-[var(--muted)]",
   brand: "bg-brand-100 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300",
-  emerald: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300",
-  amber: "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300",
-  red: "bg-red-100 text-red-800 dark:bg-red-950/50 dark:text-red-300",
+  positive: "bg-positive-mild text-positive",
+  warning: "bg-warning-mild text-warning",
+  negative: "bg-negative-mild text-negative",
 };
 
 export function Badge({ tone = "neutral", className, children }: { tone?: Tone; className?: string; children: ReactNode }) {
@@ -133,9 +133,9 @@ export function Chip({ className, children }: { className?: string; children: Re
 // ---------------------------------------------------------------------------
 
 const ACTION_STYLE: Record<Action, { label: string; cls: string }> = {
-  invest: { label: "INVEST", cls: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300" },
-  watch: { label: "WATCH", cls: "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300" },
-  reduce: { label: "REDUCE", cls: "bg-red-100 text-red-800 dark:bg-red-950/50 dark:text-red-300" },
+  invest: { label: "INVEST", cls: "bg-positive-mild text-positive" },
+  watch: { label: "WATCH", cls: "bg-warning-mild text-warning" },
+  reduce: { label: "REDUCE", cls: "bg-negative-mild text-negative" },
 };
 
 export function ActionBadge({ action }: { action: Action }) {
@@ -146,7 +146,7 @@ export function ActionBadge({ action }: { action: Action }) {
 const CONF_LABEL: Record<Confidence, string> = { low: "low", medium: "medium", high: "high" };
 
 export function ConfidenceDot({ confidence }: { confidence: Confidence }) {
-  const color = confidence === "high" ? "bg-emerald-500" : confidence === "medium" ? "bg-amber-500" : "bg-neutral-400";
+  const color = confidence === "high" ? "bg-positive" : confidence === "medium" ? "bg-warning" : "bg-[var(--border-strong)]";
   return (
     <span className="inline-flex items-center gap-1 text-[10px] text-[var(--muted)]">
       <span className={`h-1.5 w-1.5 rounded-full ${color}`} /> {CONF_LABEL[confidence]}

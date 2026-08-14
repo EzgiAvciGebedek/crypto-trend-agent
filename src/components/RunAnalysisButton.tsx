@@ -44,7 +44,7 @@ export default function RunAnalysisButton() {
         </Button>
       </div>
       {msg && (
-        <span className={`text-xs max-w-xs text-right ${state === "error" ? "text-red-600 dark:text-red-400" : "text-[var(--muted)]"}`}>{msg}</span>
+        <span className={`text-xs max-w-xs text-right ${state === "error" ? "text-negative" : "text-[var(--muted)]"}`}>{msg}</span>
       )}
     </div>
   );
