@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Geist, Geist_Mono } from "next/font/google";
+import NavLinks from "@/components/NavLinks";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -24,23 +25,19 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
-        <header className="border-b border-neutral-200 dark:border-neutral-800">
-          <div className="mx-auto max-w-6xl px-4 py-4 flex items-center justify-between gap-4">
+      <body className="min-h-full flex flex-col bg-[var(--background)] text-[var(--foreground)]">
+        <header className="sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--surface)]/80 backdrop-blur supports-[backdrop-filter]:bg-[var(--surface)]/70">
+          <div className="mx-auto max-w-6xl px-4 h-14 flex items-center justify-between gap-4">
             <Link href="/" className="flex items-center gap-2 font-semibold">
-              <span className="text-lg">📈</span>
-              <span>Crypto Trend Agent</span>
+              <span className="grid h-7 w-7 place-items-center rounded-lg bg-brand-600 text-white text-sm shadow-sm">📈</span>
+              <span className="tracking-tight">Crypto Trend Agent</span>
             </Link>
-            <nav className="flex items-center gap-4 text-sm text-neutral-600 dark:text-neutral-400">
-              <Link href="/" className="hover:text-neutral-900 dark:hover:text-neutral-100">Markets</Link>
-              <Link href="/compare" className="hover:text-neutral-900 dark:hover:text-neutral-100">Compare</Link>
-              <Link href="/history" className="hover:text-neutral-900 dark:hover:text-neutral-100">History</Link>
-            </nav>
+            <NavLinks />
           </div>
         </header>
-        <main className="flex-1 mx-auto w-full max-w-6xl px-4 py-6">{children}</main>
-        <footer className="border-t border-neutral-200 dark:border-neutral-800 py-4">
-          <div className="mx-auto max-w-6xl px-4 text-xs text-neutral-500">
+        <main className="flex-1 mx-auto w-full max-w-6xl px-4 py-8">{children}</main>
+        <footer className="border-t border-[var(--border)] py-5">
+          <div className="mx-auto max-w-6xl px-4 text-xs text-[var(--muted)]">
             Daily crypto search-trend analysis from free sources · Google Trends · CoinGecko · RSS · Reddit
           </div>
         </footer>

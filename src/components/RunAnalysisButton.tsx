@@ -1,17 +1,22 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Button } from "./ui";
 
 export default function RunAnalysisButton() {
   const [state, setState] = useState<"idle" | "running" | "done" | "error">("idle");
   const [msg, setMsg] = useState("");
   const router = useRouter();
 
-  async function run() {
+  async function run(skipTrends: boolean) {
     setState("running");
-    setMsg("Collecting sources and analyzing… (may take ~1 min)");
+    setMsg(
+      skipTrends
+        ? "Quick fill: analyzing every market without Trends… (~30s)"
+        : "Collecting sources and analyzing… (may take ~1 min)",
+    );
     try {
-      const res = await fetch("/api/cron/daily", { method: "POST" });
+      const res = await fetch(`/api/cron/daily${skipTrends ? "?trends=0" : ""}`, { method: "POST" });
       const j = await res.json();
       if (!res.ok || !j.ok) throw new Error(j.error || "unknown error");
       setState("done");
@@ -25,15 +30,21 @@ export default function RunAnalysisButton() {
 
   return (
     <div className="flex flex-col items-end gap-1">
-      <button
-        onClick={run}
-        disabled={state === "running"}
-        className="rounded-md bg-neutral-900 text-white text-sm px-3 py-2 disabled:opacity-50 dark:bg-white dark:text-neutral-900"
-      >
-        {state === "running" ? "Running…" : "Run analysis now"}
-      </button>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="secondary"
+          onClick={() => run(true)}
+          disabled={state === "running"}
+          title="Analyzes every market without Google Trends, so all markets finish within the time budget."
+        >
+          Quick fill (skip Trends)
+        </Button>
+        <Button onClick={() => run(false)} disabled={state === "running"}>
+          {state === "running" ? "Running…" : "Run analysis now"}
+        </Button>
+      </div>
       {msg && (
-        <span className={`text-xs max-w-xs text-right ${state === "error" ? "text-red-600 dark:text-red-400" : "text-neutral-500"}`}>{msg}</span>
+        <span className={`text-xs max-w-xs text-right ${state === "error" ? "text-red-600 dark:text-red-400" : "text-[var(--muted)]"}`}>{msg}</span>
       )}
     </div>
   );

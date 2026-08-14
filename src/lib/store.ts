@@ -77,6 +77,43 @@ export async function getRecommendations(date: string, market?: MarketCode): Pro
   return (data ?? []) as Recommendation[];
 }
 
+// Each market's most-recent recommendations, regardless of a single global date.
+// Partial daily runs leave some markets on an older date; the overview should still
+// show their latest available analysis instead of "No analysis data yet".
+export async function getLatestRecommendationsPerMarket(): Promise<Record<string, Recommendation[]>> {
+  const db = getSupabase();
+  if (!db) return {};
+  const { data } = await db
+    .from("recommendations")
+    .select("*")
+    .order("date", { ascending: false })
+    .limit(2000);
+  const out: Record<string, Recommendation[]> = {};
+  const latestDateByMarket: Record<string, string> = {};
+  for (const r of (data ?? []) as Recommendation[]) {
+    // first row seen for a market = its most recent date (desc order)
+    if (!latestDateByMarket[r.market_code]) latestDateByMarket[r.market_code] = r.date;
+    if (r.date === latestDateByMarket[r.market_code]) (out[r.market_code] ??= []).push(r);
+  }
+  return out;
+}
+
+// Each market's most-recent summary (see getLatestRecommendationsPerMarket).
+export async function getLatestSummariesPerMarket(): Promise<Record<string, MarketSummary>> {
+  const db = getSupabase();
+  if (!db) return {};
+  const { data } = await db
+    .from("market_summaries")
+    .select("*")
+    .order("date", { ascending: false })
+    .limit(500);
+  const out: Record<string, MarketSummary> = {};
+  for (const s of (data ?? []) as MarketSummary[]) {
+    if (!out[s.market_code]) out[s.market_code] = s; // first = latest
+  }
+  return out;
+}
+
 export async function getSummaries(date: string): Promise<MarketSummary[]> {
   const db = getSupabase();
   if (!db) return [];

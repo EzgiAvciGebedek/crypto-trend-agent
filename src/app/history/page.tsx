@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { MARKETS, getMarket } from "@/config/markets";
 import { availableDates, getRecommendations, getSummaries } from "@/lib/store";
 import { ActionBadge, ConfidenceDot } from "@/components/ui";
@@ -44,10 +45,15 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
             {MARKETS.filter((m) => recsByMarket.has(m.code) || summaryByMarket.has(m.code)).map((m) => {
               const market = getMarket(m.code)!;
               return (
-                <div key={m.code} className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4">
+                <Link
+                  key={m.code}
+                  href={`/market/${m.code}?date=${date}`}
+                  className="block rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4 transition-colors hover:border-neutral-400 dark:hover:border-neutral-600"
+                >
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-xl">{market.flag}</span>
                     <span className="font-semibold">{market.country}</span>
+                    <span className="ml-auto text-xs text-neutral-400">View details →</span>
                   </div>
                   {summaryByMarket.get(m.code) && <p className="text-xs text-neutral-600 dark:text-neutral-400 mb-2">{summaryByMarket.get(m.code)}</p>}
                   <ul className="space-y-1.5">
@@ -59,7 +65,7 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
                       </li>
                     ))}
                   </ul>
-                </div>
+                </Link>
               );
             })}
           </div>

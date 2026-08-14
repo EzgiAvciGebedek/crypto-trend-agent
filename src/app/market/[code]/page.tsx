@@ -17,13 +17,20 @@ export function generateStaticParams() {
   return MARKETS.map((m) => ({ code: m.code }));
 }
 
-export default async function MarketPage({ params }: { params: Promise<{ code: string }> }) {
+export default async function MarketPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ code: string }>;
+  searchParams: Promise<{ date?: string }>;
+}) {
   const { code } = await params;
+  const { date: dateParam } = await searchParams;
   const market = getMarket(code);
   if (!market) notFound();
 
   const feeds = FEEDS[market.code] ?? [];
-  const date = await latestDate();
+  const date = dateParam ?? (await latestDate());
   const recs = date ? await getRecommendations(date, market.code) : [];
   const summary = date ? await getSummary(date, market.code) : null;
   const metrics = date ? await getMetrics(date, market.code) : [];
@@ -95,7 +102,9 @@ export default async function MarketPage({ params }: { params: Promise<{ code: s
   return (
     <div className="space-y-6">
       <div>
-        <Link href="/" className="text-sm text-neutral-500 hover:underline">← All markets</Link>
+        <Link href={dateParam ? `/history?date=${dateParam}` : "/"} className="text-sm text-neutral-500 hover:underline">
+          {dateParam ? "← Back to history" : "← All markets"}
+        </Link>
         <h1 className="text-2xl font-bold mt-2 flex items-center gap-2">
           <span className="text-3xl">{market.flag}</span> {market.country}
         </h1>
