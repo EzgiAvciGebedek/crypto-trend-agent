@@ -13,6 +13,7 @@ import { CORE_COINS, type Coin } from "@/config/coins";
 import { COMPETITORS } from "@/config/themes";
 import { getGlobalSignals, type GlobalSignals } from "./coingecko";
 import { getCmcSignals, formatGlobalMarket, type CmcSignals } from "./coinmarketcap";
+import { combineGlobalSignals, formatTrending, formatMovers, type CombinedGlobalSignals } from "./globalMarket";
 import { getRedditSignal, type RedditSignal } from "./reddit";
 import { fetchMarketNews, countMentions, extractNewsKeywords } from "./rss";
 import { collectMarketTrends, overallCryptoInterest } from "./gtrends";
@@ -74,7 +75,7 @@ async function processMarket(
   date: string,
   yesterday: string,
   coins: Coin[],
-  global: GlobalSignals,
+  combined: CombinedGlobalSignals,
   reddit: RedditSignal,
   cmc: CmcSignals,
   withTrends: boolean,
@@ -187,9 +188,8 @@ async function processMarket(
     newsKeywords,
     genericSignals,
     yesterdayMentions: yMap,
-    globalTrending: global.trending.slice(0, 10).map((c) => c.name),
-    cmcMovers: [...cmc.gainers.slice(0, 5), ...cmc.losers.slice(0, 5)]
-      .map((c) => `${c.name} ${(c.changePct24h as number) > 0 ? "+" : ""}${(c.changePct24h as number).toFixed(0)}%`),
+    globalTrending: formatTrending(combined.trending),
+    topMovers: formatMovers(combined.gainers, combined.losers),
     cmcGlobal: formatGlobalMarket(cmc.global),
     redditTopics: reddit.topicMentions.slice(0, 8).map((t) => t.topic),
     failedSources,
@@ -255,6 +255,7 @@ export async function runDaily(opts: RunOptions = {}): Promise<DailyResult> {
   }
 
   const coins = todaysCoinList(global);
+  const combined = combineGlobalSignals(global, cmc); // merge CoinGecko + CoinMarketCap once for the whole run
   const trendsToday = trendsMarketsForToday(now);
 
   // 2) Order of markets to process: only the requested one if given; otherwise rotated order.
@@ -276,7 +277,7 @@ export async function runDaily(opts: RunOptions = {}): Promise<DailyResult> {
       ? false
       : opts.forceTrends || (opts.onlyMarket ? true : false) || trendsToday.has(market.code);
     try {
-      const h = await processMarket(market, date, yesterday, coins, global, reddit, cmc, withTrends);
+      const h = await processMarket(market, date, yesterday, coins, combined, reddit, cmc, withTrends);
       allHealth.push(...h);
       processed.push(market.code);
     } catch (err) {

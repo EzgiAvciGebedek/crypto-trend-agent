@@ -5,6 +5,7 @@ import { collectMarketTrends } from "@/lib/gtrends";
 import { fetchMarketNews, countMentions, extractNewsKeywords } from "@/lib/rss";
 import { getGlobalSignals } from "@/lib/coingecko";
 import { getCmcSignals, formatGlobalMarket } from "@/lib/coinmarketcap";
+import { combineGlobalSignals, formatTrending, formatMovers } from "@/lib/globalMarket";
 import { COMPETITORS } from "@/config/themes";
 import { getRedditSignal } from "@/lib/reddit";
 import { assembleMarketPackage } from "@/lib/assemble";
@@ -44,6 +45,7 @@ export async function GET(req: Request) {
   if (!global.ok) failedSources.push("coingecko");
   const cmc = await getCmcSignals();
   if (!cmc.ok) failedSources.push("coinmarketcap");
+  const combined = combineGlobalSignals(global, cmc);
   const reddit = await getRedditSignal();
   if (!reddit.ok) failedSources.push("reddit");
 
@@ -81,9 +83,8 @@ export async function GET(req: Request) {
     todayMentions: mentions,
     newsKeywords,
     genericSignals,
-    globalTrending: global.trending.slice(0, 10).map((c) => c.name),
-    cmcMovers: [...cmc.gainers.slice(0, 5), ...cmc.losers.slice(0, 5)]
-      .map((c) => `${c.name} ${(c.changePct24h as number) > 0 ? "+" : ""}${(c.changePct24h as number).toFixed(0)}%`),
+    globalTrending: formatTrending(combined.trending),
+    topMovers: formatMovers(combined.gainers, combined.losers),
     cmcGlobal: formatGlobalMarket(cmc.global),
     redditTopics: reddit.topicMentions.slice(0, 8).map((t) => t.topic),
     failedSources,

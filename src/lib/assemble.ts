@@ -24,8 +24,8 @@ export interface MarketDataPackage {
   genericSignals: Array<{ term: string; score: number | null; changePct: number | null; rising: string[] }>;
 
   // Global context
-  globalTrending: string[]; // CoinGecko trending coin names
-  cmcMovers: string[]; // CoinMarketCap top 24h gainers/losers, e.g. "Solana +18%"
+  globalTrending: string[]; // CoinGecko + CoinMarketCap combined trending (cross-source confirmed flagged)
+  topMovers: string[]; // CoinGecko + CoinMarketCap combined top 24h gainers/losers
   cmcGlobal: string; // CoinMarketCap market-regime summary (total cap change, BTC dominance)
   redditTopics: string[]; // rising topics on Reddit
 
@@ -47,7 +47,7 @@ export interface AssembleInput {
   genericSignals?: Array<{ term: string; score: number | null; changePct: number | null; rising: string[] }>;
   yesterdayMentions?: Record<string, number>;
   globalTrending: string[];
-  cmcMovers?: string[];
+  topMovers?: string[];
   cmcGlobal?: string;
   redditTopics: string[];
   failedSources: string[];
@@ -72,7 +72,7 @@ export function assembleMarketPackage(input: AssembleInput): MarketDataPackage {
     newsKeywords: input.newsKeywords ?? [],
     genericSignals: input.genericSignals ?? [],
     globalTrending: input.globalTrending,
-    cmcMovers: input.cmcMovers ?? [],
+    topMovers: input.topMovers ?? [],
     cmcGlobal: input.cmcGlobal ?? "unavailable",
     redditTopics: input.redditTopics,
     failedSources: input.failedSources,
