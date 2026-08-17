@@ -12,6 +12,7 @@
     "@anthropic-ai/sdk": "^0.117.1",
     "@supabase/supabase-js": "^2.112.3",
     "google-trends-api": "^4.9.2",
+    "https-proxy-agent": "^9.1.0",
     "next": "^16.3.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",

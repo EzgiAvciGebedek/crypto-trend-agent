@@ -9,6 +9,7 @@
 //  - If everything fails, the caller proceeds without Trends (RSS+CoinGecko+Reddit).
 
 import gt from "google-trends-api";
+import { HttpsProxyAgent } from "https-proxy-agent";
 import type { Market } from "@/config/markets";
 import { chunkCoins, type Coin } from "@/config/coins";
 import type { RisingQuery, SourceHealth } from "./types";
@@ -16,6 +17,21 @@ import { sleep } from "./http";
 
 // google-trends-api CJS default export compatibility
 const g = (gt as unknown as { default?: typeof gt }).default ?? gt;
+
+// Optional proxy support — Google IP-rate-limits this unofficial scraper aggressively from
+// datacenter/cloud IPs (Vercel included), which is why Trends fails almost every call in
+// production. google-trends-api forwards an `agent` option straight into Node's
+// https.request(), so routing through a residential/rotating proxy (any standard
+// http://user:pass@host:port service — Webshare, IPRoyal, Bright Data, etc.) is the standard
+// fix for exactly this problem. Without TRENDS_PROXY_URL, behavior is unchanged (direct
+// requests, same graceful degradation as before).
+let cachedAgent: HttpsProxyAgent<string> | null | undefined;
+function trendsAgent(): HttpsProxyAgent<string> | undefined {
+  if (cachedAgent !== undefined) return cachedAgent ?? undefined;
+  const url = process.env.TRENDS_PROXY_URL;
+  cachedAgent = url ? new HttpsProxyAgent(url) : null;
+  return cachedAgent ?? undefined;
+}
 
 const BASE_DELAY_MS = 4500; // default wait between requests
 // 3→2 (2026-08-17): fewer retries bounds a single call's worst case to ~1 backoff (~9s)
@@ -30,13 +46,17 @@ function looksLikeHtml(s: string): boolean {
 }
 
 // Safely wraps a Trends call: HTML/429 detection + backoff. Returns null on failure.
+// Injects the proxy agent (if configured) here — a single point, rather than every caller
+// remembering to add it.
 async function safeCall<T>(
   fn: (opts: Record<string, unknown>) => Promise<string>,
   opts: Record<string, unknown>,
 ): Promise<T | null> {
+  const agent = trendsAgent();
+  const finalOpts = agent ? { ...opts, agent } : opts;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      const raw = await fn.call(g, opts);
+      const raw = await fn.call(g, finalOpts);
       if (typeof raw !== "string" || looksLikeHtml(raw)) {
         // 429 / consent / error page — backoff and retry
         if (attempt < MAX_ATTEMPTS) await sleep(BASE_DELAY_MS * 2 ** attempt);
