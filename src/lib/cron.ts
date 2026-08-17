@@ -256,16 +256,17 @@ export async function runDaily(opts: RunOptions = {}): Promise<DailyResult> {
 
   const allHealth: SourceHealth[] = [];
 
-  // 0) Global signals (shared across every market's package)
-  const global = await getGlobalSignals();
+  // 0) Global signals (shared across every market's package) — independent, fetched in
+  // parallel (previously sequential, which alone could eat 10-20s off the budget before
+  // phase 1 even started).
+  const [global, reddit, cmc] = await Promise.all([getGlobalSignals(), getRedditSignal(), getCmcSignals()]);
+
   allHealth.push({ source: "coingecko", ok: global.ok, detail: global.error });
   if (global.ok) await saveSnapshot({ date, market_code: "GLOBAL", source: "coingecko", raw_data: { trending: global.trending, markets: global.markets.slice(0, 50) } });
 
-  const reddit = await getRedditSignal();
   allHealth.push(reddit.health);
   if (reddit.ok) await saveSnapshot({ date, market_code: "EU-EN", source: "reddit", raw_data: { hot: reddit.hotPosts.slice(0, 25), rising: reddit.risingPosts.slice(0, 25) } });
 
-  const cmc = await getCmcSignals();
   allHealth.push({ source: "coinmarketcap", ok: cmc.ok, detail: cmc.error });
   if (cmc.ok) {
     await saveSnapshot({
