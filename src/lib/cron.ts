@@ -47,11 +47,12 @@ import {
 } from "./store";
 import type { MarketMetric, Recommendation, SourceHealth } from "./types";
 
-const TIME_BUDGET_MS = 55_000; // safe margin under the Vercel Hobby 60s limit
+const TIME_BUDGET_MS = 48_000; // safe margin under the Vercel Hobby 60s limit
+const RESPONSE_OVERHEAD_MS = 6_000; // reserved for the final saveHealth() write + JSON response
 const TRENDS_MARKETS_PER_DAY = 1; // one market/day keeps phase 2 comfortably inside the budget
 const TRENDS_INTEREST_COINS = 10; // for interestOverTime (2 groups)
 const TRENDS_RISING_COINS = 2; // relatedQueries for only the top couple of coins (was 4 — fewer sequential calls)
-const TRENDS_MARKET_TIMEOUT_MS = 40_000; // defensive cap: one market's Trends work can never hang runDaily past this
+const TRENDS_MANUAL_TIMEOUT_MS = 45_000; // generous cap for a deliberate single-market manual trigger
 
 function dayOfYear(d: Date): number {
   const start = Date.UTC(d.getUTCFullYear(), 0, 0);
@@ -308,11 +309,20 @@ export async function runDaily(opts: RunOptions = {}): Promise<DailyResult> {
       : ordered.filter((m) => opts.forceTrends || trendsToday.has(m.code));
 
     for (const market of trendsCandidates) {
-      // No budget check in single-market mode — the user triggered it intentionally.
-      if (!opts.onlyMarket && Date.now() - started > TIME_BUDGET_MS) break;
+      // Manual single-market trigger: fixed generous cap, no shared budget to protect.
+      // Automated run: cap dynamically to whatever budget phase 1 actually left behind —
+      // a FIXED cap here is what caused the previous version to still hit Vercel's hard
+      // 60s wall (phase 1's real duration varies, so a static "40s for phase 2" number
+      // could still add up to more than what's actually left).
+      let timeoutMs = TRENDS_MANUAL_TIMEOUT_MS;
+      if (!opts.onlyMarket) {
+        const remaining = TIME_BUDGET_MS - (Date.now() - started) - RESPONSE_OVERHEAD_MS;
+        if (remaining < 5_000) break; // not enough budget left to bother starting another market
+        timeoutMs = remaining;
+      }
       try {
-        const h = await withTimeout(processMarketTrends(market, date, coins), TRENDS_MARKET_TIMEOUT_MS, [
-          { source: `gtrends:${market.code}`, ok: false, detail: `timed out after ${TRENDS_MARKET_TIMEOUT_MS}ms` },
+        const h = await withTimeout(processMarketTrends(market, date, coins), timeoutMs, [
+          { source: `gtrends:${market.code}`, ok: false, detail: `timed out after ${timeoutMs}ms` },
         ]);
         allHealth.push(...h);
         trendsAttempted.push(market.code);
