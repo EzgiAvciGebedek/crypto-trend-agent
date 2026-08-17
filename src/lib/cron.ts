@@ -1,12 +1,28 @@
 // Daily cron orchestration.
 //
-// Architecture decisions (Trends is slow and rate-limited; "market rotation" chosen):
-//  - Google Trends can take ~60s+ per market and Vercel Hobby functions cut off at 60s.
-//    So Trends is collected for ONLY a few markets each day; the starting index rotates
-//    day to day → all markets are covered over a few days.
-//  - RSS + CoinGecko + Reddit run for every market every day (fast).
-//  - Time budget: once the budget is spent the remaining markets are left unprocessed; each
-//    market is saved as it completes, so even a partial run produces data.
+// Architecture (rewritten 2026-08-17 after a reliability audit — see below):
+//  - PHASE 1 (fast, ALL 8 markets, IN PARALLEL): RSS + CoinGecko/CMC context + Claude
+//    analysis. No Google Trends. This is the part that actually matters every day
+//    (fresh recommendations), and none of its steps are individually slow, so markets
+//    run concurrently instead of one-by-one — total time ≈ the slowest single market,
+//    not the sum of all eight. Health is saved immediately after this phase, so even if
+//    phase 2 dies, phase 1's results are never lost/invisible.
+//  - PHASE 2 (slow, budget-gated, ROTATING subset of markets, SEQUENTIAL): Google Trends
+//    enrichment. Sequential on purpose — Trends is IP-rate-limited, so the calls are
+//    deliberately spaced out (see gtrends.ts); parallelizing them would make 429s worse,
+//    not better. Only attempted while time remains in the budget, and any Trends data it
+//    finds is *merged* into phase 1's market_metrics rows (never overwrites mention
+//    counts). Health is saved again after this phase.
+//
+// Why this split exists: measured in production, ONE market's full Trends collection
+// (interest + rising + generic terms + daily trends, each call deliberately spaced ~4.5s
+// apart to avoid rate-limiting) takes ~35-45s even with zero retries. Running that
+// sequentially before/between 8 markets' Claude calls routinely blew past Vercel's 60s
+// Hobby function limit — the function got hard-killed mid-run, so most markets never got
+// processed AND the final saveHealth() call (which only ran at the very end) never
+// happened either, leaving the UI's Source Health card with nothing to show — a
+// completely silent multi-day outage. This restructure fixes both: recommendations no
+// longer depend on Trends succeeding or even finishing, and health is never lost.
 
 import { MARKETS, type Market, type MarketCode } from "@/config/markets";
 import { CORE_COINS, type Coin } from "@/config/coins";
@@ -27,13 +43,15 @@ import {
   saveHealth,
   saveCryptoOverall,
   getYesterdayMentions,
+  getMetrics,
 } from "./store";
-import type { MarketMetric, Recommendation, SourceHealth, RisingQuery } from "./types";
+import type { MarketMetric, Recommendation, SourceHealth } from "./types";
 
 const TIME_BUDGET_MS = 55_000; // safe margin under the Vercel Hobby 60s limit
-const TRENDS_MARKETS_PER_DAY = 2; // how many markets get Trends collected each day
+const TRENDS_MARKETS_PER_DAY = 1; // one market/day keeps phase 2 comfortably inside the budget
 const TRENDS_INTEREST_COINS = 10; // for interestOverTime (2 groups)
-const TRENDS_RISING_COINS = 4; // relatedQueries for only the top few coins
+const TRENDS_RISING_COINS = 2; // relatedQueries for only the top couple of coins (was 4 — fewer sequential calls)
+const TRENDS_MARKET_TIMEOUT_MS = 40_000; // defensive cap: one market's Trends work can never hang runDaily past this
 
 function dayOfYear(d: Date): number {
   const start = Date.UTC(d.getUTCFullYear(), 0, 0);
@@ -49,6 +67,13 @@ function trendsMarketsForToday(date: Date): Set<MarketCode> {
     chosen.add(geoMarkets[(offset + i) % geoMarkets.length].code);
   }
   return chosen;
+}
+
+// Races a promise against a timer so a hung/slow call can never block the caller forever.
+// Note: the loser keeps running in the background (JS can't truly cancel an in-flight
+// google-trends-api call) — this bounds OUR control flow, it isn't a true abort.
+function withTimeout<T>(p: Promise<T>, ms: number, onTimeout: T): Promise<T> {
+  return Promise.race([p, new Promise<T>((resolve) => setTimeout(() => resolve(onTimeout), ms))]);
 }
 
 export interface DailyResult {
@@ -70,7 +95,8 @@ function todaysCoinList(global: GlobalSignals): Coin[] {
   return [...CORE_COINS, ...extra];
 }
 
-async function processMarket(
+// --- Phase 1: fast path (RSS + Claude), no Trends. Safe to run for all markets in parallel. ---
+async function processMarketFast(
   market: Market,
   date: string,
   yesterday: string,
@@ -78,12 +104,10 @@ async function processMarket(
   combined: CombinedGlobalSignals,
   reddit: RedditSignal,
   cmc: CmcSignals,
-  withTrends: boolean,
 ): Promise<SourceHealth[]> {
   const health: SourceHealth[] = [];
   const failedSources: string[] = [];
 
-  // Local news
   const news = await fetchMarketNews(market.code);
   health.push(...news.health);
   failedSources.push(...news.health.filter((h) => !h.ok).map((h) => h.source));
@@ -91,102 +115,28 @@ async function processMarket(
   const newsKeywords = extractNewsKeywords(news.items, coins);
   await saveSnapshot({ date, market_code: market.code, source: "rss", raw_data: news.items.slice(0, 40) });
 
-  // Generic/competitor Trends terms (for search interest): competitor brands + the language's generic seeds
-  const genericTerms = [...COMPETITORS.slice(0, 3), ...market.genericSeeds];
-
-  // Google Trends (if part of today's rotation)
-  type GenericSignal = { term: string; score: number | null; changePct: number | null; rising: string[] };
-  let trends = {
-    available: false,
-    interest: [] as never[],
-    rising: {} as Record<string, RisingQuery[]>,
-    dailyCrypto: [] as string[],
-    genericInterest: [] as Array<{ coin: string; score: number | null; changePct: number | null }>,
-    genericRising: {} as Record<string, RisingQuery[]>,
-  };
-  if (withTrends) {
-    // Overall crypto search interest FIRST (cheap, 1 call) so it completes within the
-    // function time budget even if the heavier collection below gets cut off.
-    const overall = await overallCryptoInterest(market);
-    if (overall) {
-      await saveCryptoOverall({
-        date,
-        market_code: market.code,
-        score: overall.score,
-        change_1d: overall.change1d,
-        change_7d: overall.change7d,
-        change_30d: overall.change30d,
-      });
-      health.push({ source: `gtrends_overall:${market.code}`, ok: true, detail: `1d/7d/30d` });
-    }
-
-    const t = await collectMarketTrends(
-      market,
-      coins.slice(0, TRENDS_INTEREST_COINS),
-      coins.slice(0, TRENDS_RISING_COINS),
-      genericTerms,
-    );
-    health.push(...t.health);
-    failedSources.push(...t.health.filter((h) => !h.ok).map((h) => h.source));
-    trends = {
-      available: t.health.some((h) => h.ok && h.source.startsWith("gtrends_interest")),
-      interest: t.interest as never[],
-      rising: t.rising,
-      dailyCrypto: t.dailyCrypto,
-      genericInterest: t.genericInterest,
-      genericRising: t.genericRising,
-    };
-    await saveSnapshot({ date, market_code: market.code, source: "gtrends_interest", raw_data: { interest: t.interest, rising: t.rising, dailyCrypto: t.dailyCrypto, genericInterest: t.genericInterest } });
-  }
-
-  // market_metrics: news mentions + (if any) trends interest/rising + generic terms
+  // Base metrics from mentions only — Phase 2 upserts interest_score/rising_queries onto
+  // these SAME rows later if Trends succeeds for this market (see mergeTrendsIntoMetrics).
   const yMap = await getYesterdayMentions(market.code, yesterday);
-  const interestByCoin = new Map(trends.interest.map((i: { coin: string; score: number | null; changePct: number | null }) => [i.coin, i]));
-  const topics = new Set<string>([...mentions.map((m) => m.topic), ...trends.interest.map((i: { coin: string }) => i.coin)]);
-  const metricRows: MarketMetric[] = [...topics].map((topic) => {
-    const men = mentions.find((m) => m.topic === topic);
-    const iot = interestByCoin.get(topic);
-    return {
-      date,
-      market_code: market.code,
-      coin_or_topic: topic,
-      interest_score: iot?.score ?? null,
-      interest_change_pct: iot?.changePct ?? null,
-      news_mentions: men?.count ?? 0,
-      news_mentions_change: (men?.count ?? 0) - (yMap[topic] ?? 0),
-      rising_queries: trends.rising[topic] ?? [],
-    };
-  });
-  // Also write generic/competitor terms as metrics (coin_or_topic = term)
-  for (const gi of trends.genericInterest) {
-    metricRows.push({
-      date,
-      market_code: market.code,
-      coin_or_topic: gi.coin,
-      interest_score: gi.score,
-      interest_change_pct: gi.changePct,
-      news_mentions: 0,
-      news_mentions_change: 0,
-      rising_queries: trends.genericRising[gi.coin] ?? [],
-    });
-  }
+  const metricRows: MarketMetric[] = mentions.map((m) => ({
+    date,
+    market_code: market.code,
+    coin_or_topic: m.topic,
+    interest_score: null,
+    interest_change_pct: null,
+    news_mentions: m.count,
+    news_mentions_change: m.count - (yMap[m.topic] ?? 0),
+    rising_queries: [],
+  }));
   await saveMetrics(metricRows);
 
-  const genericSignals: GenericSignal[] = trends.genericInterest.map((gi) => ({
-    term: gi.coin,
-    score: gi.score,
-    changePct: gi.changePct,
-    rising: (trends.genericRising[gi.coin] ?? []).map((r) => r.query),
-  }));
-
-  // Claude analysis
   const pkg = assembleMarketPackage({
     date,
     market,
-    trends,
+    trends: { available: false, interest: [], rising: {}, dailyCrypto: [] },
     todayMentions: mentions.map((m) => ({ topic: m.topic, count: m.count })),
     newsKeywords,
-    genericSignals,
+    genericSignals: [], // Trends-derived; empty in the fast phase (Claude already handles "no Trends" gracefully)
     yesterdayMentions: yMap,
     globalTrending: formatTrending(combined.trending),
     topMovers: formatMovers(combined.gainers, combined.losers),
@@ -220,9 +170,80 @@ async function processMarket(
   return health;
 }
 
+// --- Phase 2: Trends enrichment. Sequential across markets (rate-limit spacing), one
+// market at a time, each capped by withTimeout so a slow/flaky market can't hang the run. ---
+async function processMarketTrends(market: Market, date: string, coins: Coin[]): Promise<SourceHealth[]> {
+  const health: SourceHealth[] = [];
+  const genericTerms = [...COMPETITORS.slice(0, 3), ...market.genericSeeds];
+
+  // Overall crypto search interest first (cheap, single call) — this is what feeds the
+  // homepage's "Crypto search interest 1d/7d/30d" card, so it's worth prioritizing even
+  // if the heavier collection below runs out of time.
+  const overall = await overallCryptoInterest(market);
+  if (overall) {
+    await saveCryptoOverall({
+      date,
+      market_code: market.code,
+      score: overall.score,
+      change_1d: overall.change1d,
+      change_7d: overall.change7d,
+      change_30d: overall.change30d,
+    });
+    health.push({ source: `gtrends_overall:${market.code}`, ok: true, detail: "1d/7d/30d" });
+  }
+
+  const t = await collectMarketTrends(
+    market,
+    coins.slice(0, TRENDS_INTEREST_COINS),
+    coins.slice(0, TRENDS_RISING_COINS),
+    genericTerms,
+  );
+  health.push(...t.health);
+  await saveSnapshot({
+    date,
+    market_code: market.code,
+    source: "gtrends_interest",
+    raw_data: { interest: t.interest, rising: t.rising, dailyCrypto: t.dailyCrypto, genericInterest: t.genericInterest },
+  });
+
+  // Merge into the market_metrics rows Phase 1 already wrote: fetch what's there first so
+  // this upsert enriches interest_score/rising_queries WITHOUT clobbering news_mentions
+  // (Supabase upsert replaces the whole row on conflict — it does not deep-merge fields).
+  const existing = await getMetrics(date, market.code);
+  const existingByTopic = new Map(existing.map((r) => [r.coin_or_topic, r]));
+  const mentionsFor = (topic: string) => {
+    const prev = existingByTopic.get(topic);
+    return { news_mentions: prev?.news_mentions ?? 0, news_mentions_change: prev?.news_mentions_change ?? 0 };
+  };
+
+  const metricRows: MarketMetric[] = t.interest.map((i) => ({
+    date,
+    market_code: market.code,
+    coin_or_topic: i.coin,
+    interest_score: i.score,
+    interest_change_pct: i.changePct,
+    ...mentionsFor(i.coin),
+    rising_queries: t.rising[i.coin] ?? [],
+  }));
+  for (const gi of t.genericInterest) {
+    metricRows.push({
+      date,
+      market_code: market.code,
+      coin_or_topic: gi.coin,
+      interest_score: gi.score,
+      interest_change_pct: gi.changePct,
+      ...mentionsFor(gi.coin),
+      rising_queries: t.genericRising[gi.coin] ?? [],
+    });
+  }
+  if (metricRows.length > 0) await saveMetrics(metricRows);
+
+  return health;
+}
+
 export interface RunOptions {
   onlyMarket?: MarketCode; // process only this market (manual single-market refresh)
-  skipTrends?: boolean; // skip Trends (for speed)
+  skipTrends?: boolean; // skip Trends entirely (for speed)
   forceTrends?: boolean; // ignore rotation, collect Trends for the selected market(s)
 }
 
@@ -234,7 +255,7 @@ export async function runDaily(opts: RunOptions = {}): Promise<DailyResult> {
 
   const allHealth: SourceHealth[] = [];
 
-  // 1) Global signals
+  // 0) Global signals (shared across every market's package)
   const global = await getGlobalSignals();
   allHealth.push({ source: "coingecko", ok: global.ok, detail: global.error });
   if (global.ok) await saveSnapshot({ date, market_code: "GLOBAL", source: "coingecko", raw_data: { trending: global.trending, markets: global.markets.slice(0, 50) } });
@@ -255,44 +276,58 @@ export async function runDaily(opts: RunOptions = {}): Promise<DailyResult> {
   }
 
   const coins = todaysCoinList(global);
-  const combined = combineGlobalSignals(global, cmc); // merge CoinGecko + CoinMarketCap once for the whole run
-  const trendsToday = trendsMarketsForToday(now);
+  const combined = combineGlobalSignals(global, cmc);
+  const ordered = opts.onlyMarket ? MARKETS.filter((m) => m.code === opts.onlyMarket) : MARKETS;
 
-  // 2) Order of markets to process: only the requested one if given; otherwise rotated order.
-  const rotate = dayOfYear(now) % MARKETS.length;
-  const ordered = opts.onlyMarket
-    ? MARKETS.filter((m) => m.code === opts.onlyMarket)
-    : [...MARKETS.slice(rotate), ...MARKETS.slice(0, rotate)];
-
+  // === Phase 1: fast path, ALL markets, in parallel ===
   const processed: MarketCode[] = [];
   const skipped: MarketCode[] = [];
-
-  for (const market of ordered) {
-    // No budget check in single-market mode (the user triggered it intentionally).
-    if (!opts.onlyMarket && Date.now() - started > TIME_BUDGET_MS) {
-      skipped.push(market.code);
-      continue;
-    }
-    const withTrends = opts.skipTrends
-      ? false
-      : opts.forceTrends || (opts.onlyMarket ? true : false) || trendsToday.has(market.code);
-    try {
-      const h = await processMarket(market, date, yesterday, coins, combined, reddit, cmc, withTrends);
-      allHealth.push(...h);
+  const phase1 = await Promise.allSettled(
+    ordered.map((market) => processMarketFast(market, date, yesterday, coins, combined, reddit, cmc)),
+  );
+  for (let i = 0; i < ordered.length; i++) {
+    const market = ordered[i];
+    const result = phase1[i];
+    if (result.status === "fulfilled") {
+      allHealth.push(...result.value);
       processed.push(market.code);
-    } catch (err) {
-      allHealth.push({ source: `market:${market.code}`, ok: false, detail: err instanceof Error ? err.message : String(err) });
+    } else {
+      allHealth.push({ source: `market:${market.code}`, ok: false, detail: String(result.reason) });
       skipped.push(market.code);
     }
   }
-
+  // Persist now — phase 1's results must never be lost even if phase 2 dies below.
   await saveHealth(date, allHealth);
+
+  // === Phase 2: Trends enrichment, sequential, budget-gated ===
+  const trendsAttempted: MarketCode[] = [];
+  if (!opts.skipTrends) {
+    const trendsToday = trendsMarketsForToday(now);
+    const trendsCandidates = opts.onlyMarket
+      ? ordered // single-market manual trigger: always attempt Trends for it unless skipTrends
+      : ordered.filter((m) => opts.forceTrends || trendsToday.has(m.code));
+
+    for (const market of trendsCandidates) {
+      // No budget check in single-market mode — the user triggered it intentionally.
+      if (!opts.onlyMarket && Date.now() - started > TIME_BUDGET_MS) break;
+      try {
+        const h = await withTimeout(processMarketTrends(market, date, coins), TRENDS_MARKET_TIMEOUT_MS, [
+          { source: `gtrends:${market.code}`, ok: false, detail: `timed out after ${TRENDS_MARKET_TIMEOUT_MS}ms` },
+        ]);
+        allHealth.push(...h);
+        trendsAttempted.push(market.code);
+      } catch (err) {
+        allHealth.push({ source: `gtrends:${market.code}`, ok: false, detail: err instanceof Error ? err.message : String(err) });
+      }
+    }
+    if (trendsAttempted.length > 0) await saveHealth(date, allHealth); // persist phase 2's results too
+  }
 
   return {
     date,
     processedMarkets: processed,
     skippedMarkets: skipped,
-    trendsMarkets: [...trendsToday],
+    trendsMarkets: trendsAttempted,
     claudeUsed: isClaudeConfigured(),
     health: allHealth,
   };

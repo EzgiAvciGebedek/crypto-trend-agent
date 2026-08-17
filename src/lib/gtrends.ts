@@ -18,7 +18,11 @@ import { sleep } from "./http";
 const g = (gt as unknown as { default?: typeof gt }).default ?? gt;
 
 const BASE_DELAY_MS = 4500; // default wait between requests
-const MAX_ATTEMPTS = 3;
+// 3→2 (2026-08-17): fewer retries bounds a single call's worst case to ~1 backoff (~9s)
+// instead of ~2 (~27s) — needed to fit collectMarketTrends inside the per-market time cap
+// in cron.ts. Trends' live success rate is near-zero right now anyway, so extra retries
+// were mostly burning budget for no gain.
+const MAX_ATTEMPTS = 2;
 
 function looksLikeHtml(s: string): boolean {
   const head = s.slice(0, 40).toLowerCase();
