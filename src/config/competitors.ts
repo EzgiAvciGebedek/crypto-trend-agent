@@ -75,6 +75,8 @@ export const COMPETITOR_SITES: Competitor[] = [
       { url: "https://www.bunq.com/fr/blog", type: "html", lang: "fr" },
       { url: "https://www.bunq.com/es/blog", type: "html", lang: "es" },
       { url: "https://www.bunq.com/it/blog", type: "html", lang: "it" },
+      { url: "https://www.bunq.com/pl/blog", type: "html", lang: "pl" },
+      { url: "https://www.bunq.com/pt/blog", type: "html", lang: "pt" },
     ],
   },
   {
