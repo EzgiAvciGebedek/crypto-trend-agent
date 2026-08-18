@@ -18,7 +18,7 @@ export default async function CompetitorsPage() {
         <Link href="/" className="text-sm text-[var(--muted)] hover:underline">← Markets</Link>
         <h1 className="text-2xl font-bold mt-2">Competitor Radar</h1>
         <p className="text-sm text-[var(--muted)] mt-1">
-          Latest content, emphasized keywords and new blog posts crawled from each competitor.
+          Latest content and new blog posts crawled from each competitor.
           {" "}
           <span className="text-[var(--muted)]">{okCount}/{results.length} sites responding · {totalItems} items</span>
         </p>
@@ -46,7 +46,7 @@ function hostOf(url: string): string {
   }
 }
 
-// One "adaptive card" per competitor: header, emphasized keywords, and the blog/content list.
+// One "adaptive card" per competitor: header and the blog/content list.
 function CompetitorCard({ r }: { r: CompetitorResult }) {
   return (
     <div className="rounded-card border border-[var(--border)] bg-[var(--surface)] shadow-card p-4 flex flex-col">
@@ -70,23 +70,6 @@ function CompetitorCard({ r }: { r: CompetitorResult }) {
             <span> · {r.langs.length} languages ({r.langs.join(", ").toUpperCase()})</span>
           )}
         </p>
-      )}
-
-      {r.keywords.length > 0 && (
-        <div className="mt-3">
-          <p className="text-[11px] uppercase tracking-wide text-[var(--muted)] mb-1">Emphasized keywords</p>
-          <div className="flex flex-wrap gap-1.5">
-            {r.keywords.map((k) => (
-              <span
-                key={k.word}
-                className="text-xs rounded-full bg-[var(--surface-2)] px-2 py-0.5 text-[var(--foreground)]/80"
-              >
-                {k.word}
-                {k.count > 1 && <span className="ml-1 text-[var(--muted)]">×{k.count}</span>}
-              </span>
-            ))}
-          </div>
-        </div>
       )}
 
       <div className="mt-3 flex-1">
