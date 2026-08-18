@@ -48,11 +48,16 @@ import {
 import type { MarketMetric, Recommendation, SourceHealth } from "./types";
 
 const TIME_BUDGET_MS = 48_000; // safe margin under the Vercel Hobby 60s limit
+// Manual single-market triggers get a more generous ceiling (deliberate, patient action —
+// not competing with 7 other markets), but MUST still be measured from actual elapsed time,
+// not a fixed number: a static 45s cap here previously ignored phase 0/1/overall overhead
+// and reliably lost the race against Vercel's hard 60s kill (confirmed live: 4/4 single-
+// market real-Trends triggers timed out at exactly ~60s with zero response).
+const MANUAL_TIME_BUDGET_MS = 52_000;
 const RESPONSE_OVERHEAD_MS = 6_000; // reserved for the final saveHealth() write + JSON response
 const TRENDS_MARKETS_PER_DAY = 1; // one market/day keeps phase 2 comfortably inside the budget
 const TRENDS_INTEREST_COINS = 10; // for interestOverTime (2 groups)
 const TRENDS_RISING_COINS = 2; // relatedQueries for only the top couple of coins (was 4 — fewer sequential calls)
-const TRENDS_MANUAL_TIMEOUT_MS = 45_000; // generous cap for a deliberate single-market manual trigger
 
 function dayOfYear(d: Date): number {
   const start = Date.UTC(d.getUTCFullYear(), 0, 0);
@@ -330,17 +335,16 @@ export async function runDaily(opts: RunOptions = {}): Promise<DailyResult> {
   const trendsAttempted: MarketCode[] = [];
   if (!opts.skipTrends) {
     for (const market of trendsCandidates) {
-      // Manual single-market trigger: fixed generous cap, no shared budget to protect.
-      // Automated run: cap dynamically to whatever budget phase 1 actually left behind —
-      // a FIXED cap here is what caused the previous version to still hit Vercel's hard
-      // 60s wall (phase 1's real duration varies, so a static "40s for phase 2" number
-      // could still add up to more than what's actually left).
-      let timeoutMs = TRENDS_MANUAL_TIMEOUT_MS;
-      if (!opts.onlyMarket) {
-        const remaining = TIME_BUDGET_MS - (Date.now() - started) - RESPONSE_OVERHEAD_MS;
-        if (remaining < 5_000) break; // not enough budget left to bother starting another market
-        timeoutMs = remaining;
-      }
+      // Both modes cap dynamically to whatever budget phase 0/1/overall actually left
+      // behind, measured from real elapsed time — a FIXED cap here (in either mode) is
+      // what caused Vercel's hard 60s wall to fire before a response was ever sent
+      // (confirmed live in both the automated run and single-market manual triggers).
+      // Manual mode just gets a larger total ceiling since it isn't sharing budget with 7
+      // other markets.
+      const budget = opts.onlyMarket ? MANUAL_TIME_BUDGET_MS : TIME_BUDGET_MS;
+      const remaining = budget - (Date.now() - started) - RESPONSE_OVERHEAD_MS;
+      if (remaining < 5_000) break; // not enough budget left to bother starting another market
+      const timeoutMs = remaining;
       try {
         const h = await withTimeout(processMarketTrends(market, date, coins), timeoutMs, [
           { source: `gtrends:${market.code}`, ok: false, detail: `timed out after ${timeoutMs}ms` },
