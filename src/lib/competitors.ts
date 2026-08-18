@@ -219,6 +219,10 @@ async function crawlOne(c: Competitor): Promise<CompetitorResult> {
     try {
       const items = src.type === "rss" ? await fromRss(src.url) : await fromHtml(src.url);
       if (items.length > 0) return finish(items, src.url);
+      // Succeeded but nothing extractable (e.g. a JS-rendered SPA with no server-side
+      // article links) — record this, not just thrown errors, so the final message
+      // reflects the LAST source actually tried, not a stale error from an earlier one.
+      lastError = "no items found (page returned no extractable content)";
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
     }
@@ -229,6 +233,7 @@ async function crawlOne(c: Competitor): Promise<CompetitorResult> {
         const text = await scraperFetchText(src.url, { render: src.type === "html" });
         const items = src.type === "rss" ? await fromRssText(text) : extractHtmlLinks(text, src.url);
         if (items.length > 0) return finish(items, src.url, scraperName());
+        lastError = "proxy: no items found (page returned no extractable content)";
       } catch (err) {
         lastError = `proxy: ${err instanceof Error ? err.message : String(err)}`;
       }

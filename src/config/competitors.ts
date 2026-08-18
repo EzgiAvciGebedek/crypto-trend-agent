@@ -90,10 +90,11 @@ export const COMPETITOR_SITES: Competitor[] = [
     id: "blockchain-com",
     name: "Blockchain.com",
     homepage: "https://www.blockchain.com",
-    sources: [
-      { url: "https://www.blockchain.com/blog/feed", type: "rss" },
-      { url: "https://www.blockchain.com/blog", type: "html" },
-    ],
+    // No RSS feed exists at this domain (verified live — /blog/feed is a 404, not a
+    // guess gone stale). /blog itself is a Next.js SPA with no article links in the
+    // server-rendered HTML, so this source needs the render proxy (SCRAPER_API_KEY) to
+    // ever return content — same category as Binance/Bitvavo/Revolut/Trading212/Bybit.
+    sources: [{ url: "https://www.blockchain.com/blog", type: "html" }],
   },
   {
     id: "kraken",

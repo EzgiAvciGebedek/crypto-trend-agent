@@ -90,7 +90,7 @@ function CompetitorCard({ r }: { r: CompetitorResult }) {
         <p className="text-[11px] uppercase tracking-wide text-[var(--muted)] mb-1">New content & blogs</p>
         {r.items.length === 0 ? (
           <p className="text-sm text-[var(--muted)] italic">
-            {r.error === "no items found"
+            {r.error?.includes("no items found")
               ? "No public feed found (site likely renders in-browser)."
               : `Could not fetch: ${r.error}`}
           </p>
