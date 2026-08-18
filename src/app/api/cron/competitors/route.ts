@@ -31,13 +31,20 @@ async function handle(req: Request) {
   try {
     const date = new Date().toISOString().slice(0, 10);
     const results = await crawlAllCompetitors(/* forceFresh */ true);
-    await saveCompetitorContent(date, results);
+    // A competitor that ran out of the shared crawl budget this run is NOT the same as one
+    // that genuinely returned nothing — persisting it would overwrite yesterday's good row
+    // with a false "no content" for a site that's actually fine. Skip it; its last-good row
+    // stays authoritative until a run that actually finishes in time for it.
+    const toSave = results.filter((r) => !r.timedOut);
+    await saveCompetitorContent(date, toSave);
     const okCount = results.filter((r) => r.ok).length;
+    const timedOutCount = results.filter((r) => r.timedOut).length;
     return NextResponse.json({
       ok: true,
       date,
       competitors: results.length,
       responding: okCount,
+      timedOut: timedOutCount,
       totalItems: results.reduce((n, r) => n + r.items.length, 0),
     });
   } catch (err) {

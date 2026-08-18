@@ -25,6 +25,17 @@ const MAX_ITEMS_PER_LANG = 6; // cap per language when merging, so one language 
 const MAX_ITEMS_PER_COMPETITOR = 20; // cap on the final merged (all-languages) list
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
+// Overall wall-clock budget for crawling ALL competitors, well under Vercel's 60s hard
+// kill (maxDuration on /api/cron/competitors). Without this, a competitor whose sources
+// all fall through to the headless-browser tier (shared 3-page semaphore, up to ~10s per
+// page) can make the whole Promise.all run past 60s — and unlike our own timeout, Vercel's
+// FUNCTION_INVOCATION_TIMEOUT kills the function BEFORE saveCompetitorContent ever runs,
+// so a slow run doesn't just return late, it silently persists NOTHING for that day.
+// Confirmed live: querying competitor_content's `date` column showed exactly one distinct
+// date ever — today, and only after a manual trigger — meaning the scheduled cron had never
+// once finished in time on its own since this table existed.
+const CRAWL_BUDGET_MS = 45_000;
+
 const rss: Parser = new Parser({
   timeout: PER_SOURCE_TIMEOUT_MS,
   headers: { "User-Agent": BROWSER_UA, Accept: "application/rss+xml, application/xml, text/xml, */*" },
@@ -48,6 +59,9 @@ export interface CompetitorResult {
   ok: boolean;
   error?: string;
   langs?: string[]; // languages that actually contributed items, e.g. ["en", "nl", "de"]
+  timedOut?: boolean; // ran out of the shared crawl budget — caller should NOT persist this
+  // over a previous good row (see /api/cron/competitors), since it's an artifact of this
+  // run being slow, not evidence the competitor's content actually disappeared.
 }
 
 // --- RSS source ---
@@ -389,12 +403,37 @@ async function crawlOne(c: Competitor): Promise<CompetitorResult> {
 
 let cache: { at: number; data: CompetitorResult[] } | null = null;
 
+// Races a promise against a deadline. On timeout we stop WAITING for `p` — the underlying
+// fetch/render keeps running in the background until its own internal timeout fires, this
+// just stops it from holding up the caller past the shared crawl budget.
+function withDeadline<T>(p: Promise<T>, ms: number): Promise<T | "TIMED_OUT"> {
+  return Promise.race([p, new Promise<"TIMED_OUT">((resolve) => setTimeout(() => resolve("TIMED_OUT"), ms))]);
+}
+
 // `forceFresh` bypasses the cache — used by the scheduled cron, which IS the authoritative
 // daily refresh and shouldn't serve a stale in-process cache from a previous invocation.
 export async function crawlAllCompetitors(forceFresh = false): Promise<CompetitorResult[]> {
   if (!forceFresh && cache && Date.now() - cache.at < CACHE_TTL_MS) return cache.data;
+  const deadline = Date.now() + CRAWL_BUDGET_MS;
   try {
-    const data = await Promise.all(COMPETITOR_SITES.map((c) => crawlOne(c)));
+    const data = await Promise.all(
+      COMPETITOR_SITES.map(async (c) => {
+        const remaining = Math.max(1_000, deadline - Date.now());
+        const result = await withDeadline(crawlOne(c), remaining);
+        if (result !== "TIMED_OUT") return result;
+        return {
+          id: c.id,
+          name: c.name,
+          homepage: c.homepage,
+          items: [],
+          keywords: [],
+          sourceUsed: null,
+          ok: false,
+          error: "timed out (crawl budget exceeded)",
+          timedOut: true,
+        } satisfies CompetitorResult;
+      }),
+    );
     cache = { at: Date.now(), data };
     return data;
   } finally {
