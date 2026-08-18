@@ -4,11 +4,12 @@
 // SPAs) — the direct fetch's raw server HTML has nothing to extract, but a real browser
 // executing the page's JS will produce the actual rendered content.
 //
-// What this does NOT fix: sites with active IP-reputation-based bot blocking (Cloudflare
-// WAF etc., e.g. bitvavo.com returning 403 even on robots.txt/sitemap.xml). The request
-// still originates from the same Vercel/AWS datacenter IP range regardless of which
-// browser or tool sends it — IP reputation, not "is this a real browser", is what those
-// systems gate on. A proxy (see scraper.ts) is the only thing that changes the exit IP.
+// What this does NOT fix: sites with hard IP-reputation-based blocking (a 403 served
+// before any page loads). But a Cloudflare *JS challenge* ("Just a moment…") is a
+// different case — a real browser often solves it on its own within a few seconds, and
+// the clearance cookie then applies to every later page in the same browser context, so
+// renderPageHtml() waits out the challenge before giving up. Only a proxy (see
+// scraper.ts), which changes the exit IP, helps against true IP-reputation blocks.
 //
 // @sparticuz/chromium ships a Linux binary built specifically for AWS Lambda/Vercel's
 // serverless runtime — it can only launch there, not on a local macOS/Windows dev machine
@@ -22,6 +23,11 @@ import type { Browser, Page } from "puppeteer-core";
 const NAV_TIMEOUT_MS = 9_000;
 const RENDER_SETTLE_MS = 1_200; // brief pause after DOM-ready for client-rendered content to paint
 const MAX_CONCURRENT_PAGES = 3; // bounds memory — headless tabs add up fast in a small function
+// Cloudflare's JS challenge ("Just a moment…") often solves itself in a real browser
+// given a few seconds — and once one page clears it, the clearance cookie is shared by
+// the whole browser context, so later pages on the same domain load unchallenged.
+const CHALLENGE_WAIT_MS = 8_000;
+const CHALLENGE_RE = /just a moment|challenges\.cloudflare\.com|cf-chl/i;
 
 const BROWSER_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
@@ -34,9 +40,13 @@ async function launchBrowser(): Promise<Browser> {
     import("puppeteer-core"),
     import("@sparticuz/chromium"),
   ]);
+  // Local dev override: @sparticuz/chromium's binary is Linux-only (spawn ENOEXEC on
+  // macOS/Windows), so the headless tier can't be exercised locally without pointing
+  // LOCAL_CHROMIUM_PATH at a system Chrome/Chromium install.
+  const localPath = process.env.LOCAL_CHROMIUM_PATH;
   return puppeteer.launch({
-    args: chromium.args,
-    executablePath: await chromium.executablePath(),
+    args: localPath ? ["--no-sandbox"] : chromium.args,
+    executablePath: localPath ?? (await chromium.executablePath()),
     headless: true,
   });
 }
@@ -90,7 +100,15 @@ export async function renderPageHtml(url: string, timeoutMs = NAV_TIMEOUT_MS): P
     await page.setUserAgent(BROWSER_UA);
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
     await new Promise((r) => setTimeout(r, RENDER_SETTLE_MS));
-    return await page.content();
+    let html = await page.content();
+    // Still on a Cloudflare challenge page → give the challenge script time to solve
+    // itself, re-reading the DOM once a second until the real content shows up.
+    const deadline = Date.now() + CHALLENGE_WAIT_MS;
+    while (CHALLENGE_RE.test(html) && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 1_000));
+      html = await page.content();
+    }
+    return html;
   } finally {
     if (page) await page.close().catch(() => {});
     releaseSlot();
