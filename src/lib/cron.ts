@@ -171,17 +171,17 @@ async function processMarketFast(
   return health;
 }
 
-// --- Phase 2: Trends enrichment. Sequential across markets (rate-limit spacing), one
-// market at a time, each capped by withTimeout so a slow/flaky market can't hang the run. ---
-async function processMarketTrends(market: Market, date: string, coins: Coin[]): Promise<SourceHealth[]> {
-  const health: SourceHealth[] = [];
-  const genericTerms = [...COMPETITORS.slice(0, 3), ...market.genericSeeds];
-
-  // Overall crypto search interest first (cheap, single call) — this is what feeds the
-  // homepage's "Crypto search interest 1d/7d/30d" card, so it's worth prioritizing even
-  // if the heavier collection below runs out of time.
-  const overall = await overallCryptoInterest(market);
-  if (overall) {
+// --- Overall crypto search interest: ONE fast Trends call per rotation market, feeding
+// the homepage's "Crypto search interest 1d/7d/30d" card. Deliberately kicked off
+// CONCURRENTLY with phase 1 (see runDaily) rather than living inside phase 2 — phase 2
+// only gets whatever budget phase 1 leaves behind (often just a few seconds once 8
+// parallel Claude calls finish), which meant this card almost never updated in
+// production even though the call itself is cheap. Running it alongside phase 1 gives it
+// phase 1's whole ~35-40s window instead of phase 2's leftovers. ---
+async function processMarketOverall(market: Market, date: string): Promise<SourceHealth> {
+  try {
+    const overall = await overallCryptoInterest(market);
+    if (!overall) return { source: `gtrends_overall:${market.code}`, ok: false, detail: "unavailable" };
     await saveCryptoOverall({
       date,
       market_code: market.code,
@@ -190,8 +190,18 @@ async function processMarketTrends(market: Market, date: string, coins: Coin[]):
       change_7d: overall.change7d,
       change_30d: overall.change30d,
     });
-    health.push({ source: `gtrends_overall:${market.code}`, ok: true, detail: "1d/7d/30d" });
+    return { source: `gtrends_overall:${market.code}`, ok: true, detail: "1d/7d/30d" };
+  } catch (err) {
+    return { source: `gtrends_overall:${market.code}`, ok: false, detail: err instanceof Error ? err.message : String(err) };
   }
+}
+
+// --- Phase 2: Trends enrichment (rising queries, generic/competitor terms, daily trends —
+// the heavier, multi-call collection). Sequential across markets (rate-limit spacing), one
+// market at a time, each capped by withTimeout so a slow/flaky market can't hang the run. ---
+async function processMarketTrends(market: Market, date: string, coins: Coin[]): Promise<SourceHealth[]> {
+  const health: SourceHealth[] = [];
+  const genericTerms = [...COMPETITORS.slice(0, 3), ...market.genericSeeds];
 
   const t = await collectMarketTrends(
     market,
@@ -280,6 +290,16 @@ export async function runDaily(opts: RunOptions = {}): Promise<DailyResult> {
   const coins = todaysCoinList(global);
   const combined = combineGlobalSignals(global, cmc);
   const ordered = opts.onlyMarket ? MARKETS.filter((m) => m.code === opts.onlyMarket) : MARKETS;
+  const trendsToday = trendsMarketsForToday(now);
+  const trendsCandidates = opts.onlyMarket
+    ? ordered // single-market manual trigger: always attempt Trends for it unless skipTrends
+    : ordered.filter((m) => opts.forceTrends || trendsToday.has(m.code));
+
+  // Kick off the cheap "overall interest" call for today's rotation market NOW, concurrently
+  // with phase 1 below — see processMarketOverall for why this isn't inside phase 2.
+  const overallPromise: Promise<SourceHealth[]> = opts.skipTrends
+    ? Promise.resolve([])
+    : Promise.all(trendsCandidates.map((m) => processMarketOverall(m, date)));
 
   // === Phase 1: fast path, ALL markets, in parallel ===
   const processed: MarketCode[] = [];
@@ -298,17 +318,17 @@ export async function runDaily(opts: RunOptions = {}): Promise<DailyResult> {
       skipped.push(market.code);
     }
   }
-  // Persist now — phase 1's results must never be lost even if phase 2 dies below.
+
+  // The overall-interest call(s) ran alongside phase 1 above; by now they're done or
+  // finish within moments (phase 1 took much longer than a single Trends call needs).
+  allHealth.push(...(await overallPromise));
+
+  // Persist now — phase 1's (and overall's) results must never be lost even if phase 2 dies below.
   await saveHealth(date, allHealth);
 
-  // === Phase 2: Trends enrichment, sequential, budget-gated ===
+  // === Phase 2: heavier Trends enrichment, sequential, budget-gated ===
   const trendsAttempted: MarketCode[] = [];
   if (!opts.skipTrends) {
-    const trendsToday = trendsMarketsForToday(now);
-    const trendsCandidates = opts.onlyMarket
-      ? ordered // single-market manual trigger: always attempt Trends for it unless skipTrends
-      : ordered.filter((m) => opts.forceTrends || trendsToday.has(m.code));
-
     for (const market of trendsCandidates) {
       // Manual single-market trigger: fixed generous cap, no shared budget to protect.
       // Automated run: cap dynamically to whatever budget phase 1 actually left behind —
