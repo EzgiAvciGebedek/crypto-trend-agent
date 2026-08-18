@@ -78,3 +78,24 @@ create table if not exists source_health (
   created_at  timestamptz not null default now()
 );
 create index if not exists idx_health_date on source_health (date);
+
+-- Competitor Radar: persisted daily crawl results (2026-08-19 — was live-crawl-only with a
+-- 30-min in-process cache, which doesn't actually stay warm across separate serverless
+-- instances, so results weren't reliably "daily" for users. Now populated by a scheduled
+-- cron, same pattern as the rest of this schema.)
+create table if not exists competitor_content (
+  id             bigint generated always as identity primary key,
+  date           date not null,
+  competitor_id  text not null,          -- 'bitvavo', 'kraken', ... (see src/config/competitors.ts)
+  competitor     text not null,          -- display name
+  homepage       text not null,
+  items          jsonb not null default '[]'::jsonb,  -- [{title, url, isoDate}]
+  keywords       jsonb not null default '[]'::jsonb,  -- [{word, count}]
+  source_used    text,                   -- URL that produced the items
+  via            text,                   -- render/anti-bot proxy provider name, if used
+  ok             boolean not null default false,
+  error          text,
+  created_at     timestamptz not null default now(),
+  unique (date, competitor_id)
+);
+create index if not exists idx_competitor_content_date on competitor_content (date);

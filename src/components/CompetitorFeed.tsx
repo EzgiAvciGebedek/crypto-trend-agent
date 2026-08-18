@@ -1,10 +1,15 @@
 import Link from "next/link";
 import { crawlAllCompetitors, latestAcrossCompetitors } from "@/lib/competitors";
+import { getLatestCompetitorContent } from "@/lib/store";
 import CompetitorFeedList from "./CompetitorFeedList";
 
 // Homepage summary: the 15 newest items crawled across all competitor sites.
+// Reads the scheduled cron's persisted results first (consistent for every visitor,
+// updated daily — see /api/cron/competitors); falls back to a live crawl if the DB has
+// nothing yet (schema not migrated, or the cron hasn't run for the first time yet).
 export default async function CompetitorFeed() {
-  const results = await crawlAllCompetitors();
+  let results = await getLatestCompetitorContent();
+  if (results.length === 0) results = await crawlAllCompetitors();
   const latest = latestAcrossCompetitors(results, 15);
   const okCount = results.filter((r) => r.ok).length;
 

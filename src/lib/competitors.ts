@@ -241,8 +241,10 @@ async function crawlOne(c: Competitor): Promise<CompetitorResult> {
 
 let cache: { at: number; data: CompetitorResult[] } | null = null;
 
-export async function crawlAllCompetitors(): Promise<CompetitorResult[]> {
-  if (cache && Date.now() - cache.at < CACHE_TTL_MS) return cache.data;
+// `forceFresh` bypasses the cache — used by the scheduled cron, which IS the authoritative
+// daily refresh and shouldn't serve a stale in-process cache from a previous invocation.
+export async function crawlAllCompetitors(forceFresh = false): Promise<CompetitorResult[]> {
+  if (!forceFresh && cache && Date.now() - cache.at < CACHE_TTL_MS) return cache.data;
   const data = await Promise.all(COMPETITOR_SITES.map((c) => crawlOne(c)));
   cache = { at: Date.now(), data };
   return data;

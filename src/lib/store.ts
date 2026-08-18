@@ -11,6 +11,7 @@ import type {
   SourceHealth,
   CryptoOverall,
 } from "./types";
+import type { CompetitorResult } from "./competitors";
 
 // --- Writes ---
 
@@ -53,6 +54,27 @@ export async function saveHealth(date: string, rows: SourceHealth[]): Promise<vo
   if (!db || rows.length === 0) return;
   await db.from("source_health").delete().eq("date", date);
   await db.from("source_health").insert(rows.map((r) => ({ date, source: r.source, ok: r.ok, detail: r.detail })));
+}
+
+// Persists the daily Competitor Radar crawl so it's visible to every visitor/instance —
+// the crawler's own 30-min cache is in-process only and doesn't survive across serverless
+// instances, so without this the "daily" crawl wasn't reliably daily for users.
+export async function saveCompetitorContent(date: string, results: CompetitorResult[]): Promise<void> {
+  const db = getSupabase();
+  if (!db || results.length === 0) return;
+  const rows = results.map((r) => ({
+    date,
+    competitor_id: r.id,
+    competitor: r.name,
+    homepage: r.homepage,
+    items: r.items,
+    keywords: r.keywords,
+    source_used: r.sourceUsed,
+    via: r.via ?? null,
+    ok: r.ok,
+    error: r.error ?? null,
+  }));
+  await db.from("competitor_content").upsert(rows, { onConflict: "date,competitor_id" });
 }
 
 // --- Reads ---
@@ -225,6 +247,36 @@ export async function getLatestCryptoOverall(): Promise<Record<string, CryptoOve
     if (!map[r.market_code]) map[r.market_code] = r; // first seen = most recent (desc order)
   }
   return map;
+}
+
+// Each competitor's most recent persisted crawl (mirrors getLatestRecommendationsPerMarket's
+// pattern). Returns [] when the table doesn't exist yet (pre-migration) or DB is unset —
+// callers fall back to a live crawl in that case.
+export async function getLatestCompetitorContent(): Promise<CompetitorResult[]> {
+  const db = getSupabase();
+  if (!db) return [];
+  const { data } = await db
+    .from("competitor_content")
+    .select("*")
+    .order("date", { ascending: false })
+    .limit(200);
+  const seen = new Map<string, CompetitorResult>();
+  for (const r of (data ?? []) as Array<Record<string, unknown>>) {
+    const id = r.competitor_id as string;
+    if (seen.has(id)) continue; // first seen per competitor = most recent (desc order)
+    seen.set(id, {
+      id,
+      name: r.competitor as string,
+      homepage: r.homepage as string,
+      items: (r.items as CompetitorResult["items"]) ?? [],
+      keywords: (r.keywords as CompetitorResult["keywords"]) ?? [],
+      sourceUsed: (r.source_used as string | null) ?? null,
+      via: (r.via as string | undefined) ?? undefined,
+      ok: Boolean(r.ok),
+      error: (r.error as string | undefined) ?? undefined,
+    });
+  }
+  return [...seen.values()];
 }
 
 export async function availableDates(limit = 30): Promise<string[]> {

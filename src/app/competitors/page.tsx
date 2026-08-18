@@ -1,10 +1,14 @@
 import Link from "next/link";
 import { crawlAllCompetitors, type CompetitorResult } from "@/lib/competitors";
+import { getLatestCompetitorContent } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
+// Reads the scheduled cron's persisted results first (see /api/cron/competitors); falls
+// back to a live crawl if the DB has nothing yet (schema not migrated, or first run pending).
 export default async function CompetitorsPage() {
-  const results = await crawlAllCompetitors();
+  let results = await getLatestCompetitorContent();
+  if (results.length === 0) results = await crawlAllCompetitors();
   const okCount = results.filter((r) => r.ok).length;
   const totalItems = results.reduce((n, r) => n + r.items.length, 0);
 
