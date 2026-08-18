@@ -97,11 +97,24 @@ export async function renderPageHtml(url: string, timeoutMs = NAV_TIMEOUT_MS): P
   }
 }
 
+function raceTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
+  return Promise.race([p, new Promise<null>((resolve) => setTimeout(() => resolve(null), ms))]);
+}
+
 // Closes the shared browser — call once after a crawl batch completes so the serverless
 // invocation can finish cleanly instead of leaving a Chromium process dangling.
+//
+// This runs in the caller's `finally`, AFTER the caller's own per-competitor deadline race
+// has already given up on any slow crawl — so it must never itself be unbounded. It used to
+// just `await browserPromise` with no timeout: if the launch was still stuck (cold start
+// extracting the ~50MB chromium binary), this awaited it anyway and could burn through
+// whatever was left of the whole route's time budget regardless of how tight that budget
+// was — confirmed live, the route kept hitting the exact 60s FUNCTION_INVOCATION_TIMEOUT on
+// cold starts no matter how much the caller's own budget was tightened, because THIS was
+// the actual unbounded step, not the crawl itself.
 export async function closeBrowser(): Promise<void> {
   if (!browserPromise) return;
-  const browser = await browserPromise.catch(() => null);
+  const browser = await raceTimeout(browserPromise.catch(() => null), 5_000);
   browserPromise = null;
-  if (browser) await browser.close().catch(() => {});
+  if (browser) await raceTimeout(browser.close().catch(() => {}), 3_000);
 }
