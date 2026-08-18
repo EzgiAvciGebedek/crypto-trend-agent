@@ -11,7 +11,7 @@
 
 import Parser from "rss-parser";
 import { COMPETITOR_SITES, type Competitor, type CompetitorSource } from "@/config/competitors";
-import { fetchWithTimeout } from "./http";
+import { fetchWithTimeout, sleep } from "./http";
 import { isSafePublicUrl, readTextCapped } from "./security";
 import { scraperConfigured, scraperFetchText, scraperName } from "./scraper";
 import { renderPageHtml, closeBrowser } from "./headlessBrowser";
@@ -276,7 +276,17 @@ async function crawlOne(c: Competitor): Promise<CompetitorResult> {
     byLang.set(lang, arr);
   }
   const langEntries = [...byLang.entries()];
-  const attempts = await Promise.all(langEntries.map(([, sources]) => crawlLang(sources)));
+  // Stagger the start of each language's requests instead of firing them all in the same
+  // tick — hitting one domain with N simultaneous requests to different locale paths looks
+  // like a burst/scrape pattern to bot detection (observed live: eToro went from
+  // succeeding reliably on a single request to failing on ALL 7 once they became
+  // concurrent). Languages still run concurrently overall, just not launched in lockstep.
+  const LANG_STAGGER_MS = 350;
+  const attempts = await Promise.all(
+    langEntries.map(([, sources], i) =>
+      (i === 0 ? Promise.resolve() : sleep(i * LANG_STAGGER_MS)).then(() => crawlLang(sources)),
+    ),
+  );
 
   const seen = new Set<string>();
   const merged: CompetitorItem[] = [];
