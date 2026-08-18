@@ -1,8 +1,10 @@
 // Competitor content crawler.
 //
 // For each competitor (src/config/competitors.ts) we try its candidate sources in order:
-//  - RSS  → parsed with rss-parser (structured, dated).
-//  - HTML → article links extracted heuristically from the page markup.
+//  - RSS         → parsed with rss-parser (structured, dated).
+//  - HTML        → article links extracted heuristically from the page markup.
+//  - next-data   → a Next.js SPA's `/_next/data/<buildId>/…json` listing endpoint.
+//  - binance-api → Binance's public CMS JSON API (their HTML pages are bot-gated).
 // The first source that yields items wins. Everything is timeout-protected and degrades
 // gracefully: a failing site produces an empty card with an error note, never throws.
 //
@@ -100,6 +102,85 @@ async function fromRss(url: string): Promise<CompetitorItem[]> {
 // Parse an already-fetched RSS/XML string (used for the proxy path).
 async function fromRssText(xml: string): Promise<CompetitorItem[]> {
   return mapRssItems((await rss.parseString(xml)).items ?? []);
+}
+
+// --- Next.js _next/data source ---
+// Some SPAs (Blockchain.com's blog) server-render no article links at all, but their
+// Next.js data endpoint serves the same listing as structured JSON. The build id in the
+// endpoint path rotates on every deploy, so it is discovered from the page's own asset
+// URLs (`<basePath>/_next/static/<buildId>/…`) rather than hardcoded.
+async function fromNextData(pageUrl: string): Promise<CompetitorItem[]> {
+  const res = await fetchWithTimeout(pageUrl, {
+    timeoutMs: PER_SOURCE_TIMEOUT_MS,
+    headers: { "User-Agent": BROWSER_UA, Accept: "text/html,application/xhtml+xml" },
+  });
+  const html = await readTextCapped(res);
+  // Build ids are long random strings (10+ chars) — the length floor keeps static
+  // subdirs like `_next/static/css/` from matching as a "build id".
+  const m = html.match(/((?:\/[\w.-]+)*?)\/_next\/(?:static|data)\/([\w-]{10,})\//);
+  if (!m) throw new Error("no _next asset URL found (not a Next.js page?)");
+  const [, basePath, buildId] = m;
+
+  const base = new URL(pageUrl);
+  // Page segment relative to the base path: /blog → "index", /blog/foo → "foo".
+  const rel = base.pathname.startsWith(basePath) ? base.pathname.slice(basePath.length) : base.pathname;
+  const seg = rel.replace(/^\/+|\/+$/g, "") || "index";
+  const dataUrl = `${base.origin}${basePath}/_next/data/${buildId}/${seg}.json`;
+
+  const dataRes = await fetchWithTimeout(dataUrl, {
+    timeoutMs: PER_SOURCE_TIMEOUT_MS,
+    headers: { "User-Agent": BROWSER_UA, Accept: "application/json" },
+  });
+  // ButterCMS shape: pageProps.posts.data[] = { title, slug, published }.
+  const json = JSON.parse(await readTextCapped(dataRes)) as {
+    pageProps?: { posts?: { data?: Array<{ title?: string; slug?: string; published?: string }> } };
+  };
+  return (json.pageProps?.posts?.data ?? [])
+    .filter((p) => p.title && p.slug)
+    .slice(0, MAX_ITEMS_PER_SOURCE)
+    .map((p) => ({
+      title: p.title!.trim(),
+      url: `${base.origin}${basePath}/posts/${p.slug}`,
+      isoDate: p.published ?? null,
+    }));
+}
+
+// --- Binance CMS API source ---
+// Binance's blog/announcement pages are behind aggressive bot mitigation (HTTP 202 with
+// an empty body), but their public CMS JSON API serves the same listings without it.
+// Articles are grouped into catalogs (listings, news, activities, airdrops…); we take a
+// few from each so one high-volume catalog can't crowd the others out of the sample.
+async function fromBinanceApi(apiUrl: string): Promise<CompetitorItem[]> {
+  const res = await fetchWithTimeout(apiUrl, {
+    timeoutMs: PER_SOURCE_TIMEOUT_MS,
+    headers: { "User-Agent": BROWSER_UA, Accept: "application/json" },
+  });
+  const json = JSON.parse(await readTextCapped(res)) as {
+    data?: {
+      catalogs?: Array<{
+        articles?: Array<{ title?: string; code?: string; releaseDate?: number }>;
+      }>;
+    };
+  };
+  const PER_CATALOG = 3;
+  const items: CompetitorItem[] = [];
+  const seen = new Set<string>();
+  for (const cat of json.data?.catalogs ?? []) {
+    let taken = 0;
+    for (const a of cat.articles ?? []) {
+      if (taken >= PER_CATALOG || items.length >= MAX_ITEMS_PER_SOURCE) break;
+      if (!a.title?.trim() || !a.code || seen.has(a.code)) continue;
+      seen.add(a.code);
+      taken++;
+      items.push({
+        title: a.title.trim(),
+        url: `https://www.binance.com/en/support/announcement/${a.code}`,
+        isoDate: a.releaseDate ? new Date(a.releaseDate).toISOString() : null,
+      });
+    }
+    if (items.length >= MAX_ITEMS_PER_SOURCE) break;
+  }
+  return items;
 }
 
 // --- HTML source (heuristic article-link extraction) ---
@@ -248,7 +329,11 @@ const KW_STOP = new Set<string>([
 ]);
 
 function extractKeywords(titles: string[], ownName: string, limit = 8): Array<{ word: string; count: number }> {
+  // The competitor's own brand terms are noise (every other title mentions them), so
+  // filter both the squashed full name ("blockchaincom") and its individual word parts
+  // ("Blockchain.com" → "blockchain", "Trading 212" → "trading").
   const own = ownName.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const ownParts = new Set(ownName.toLowerCase().split(/[^a-z0-9]+/).filter((p) => p.length >= 3));
   const counts = new Map<string, number>();
   for (const t of titles) {
     const toks = t
@@ -259,7 +344,8 @@ function extractKeywords(titles: string[], ownName: string, limit = 8): Array<{ 
     const seenInTitle = new Set<string>();
     for (const tok of toks) {
       if (tok.length < 3 || /^\d+$/.test(tok) || KW_STOP.has(tok)) continue;
-      if (tok.replace(/[^a-z0-9]/g, "") === own) continue;
+      const squashed = tok.replace(/[^a-z0-9]/g, "");
+      if (squashed === own || ownParts.has(squashed)) continue;
       if (seenInTitle.has(tok)) continue; // count once per title
       seenInTitle.add(tok);
       counts.set(tok, (counts.get(tok) ?? 0) + 1);
@@ -280,6 +366,20 @@ interface SourceAttempt {
   error?: string;
 }
 
+// Direct (no rendering, no proxy) fetch for any source type.
+function fetchDirect(src: CompetitorSource): Promise<CompetitorItem[]> {
+  switch (src.type) {
+    case "rss":
+      return fromRss(src.url);
+    case "html":
+      return fromHtml(src.url);
+    case "next-data":
+      return fromNextData(src.url);
+    case "binance-api":
+      return fromBinanceApi(src.url);
+  }
+}
+
 // Tries one candidate URL through the full fallback chain: direct fetch (free) → headless
 // browser (free, fixes pure JS-rendered SPAs) → render/anti-bot proxy (paid, opt-in).
 async function crawlSource(src: CompetitorSource): Promise<SourceAttempt> {
@@ -289,7 +389,7 @@ async function crawlSource(src: CompetitorSource): Promise<SourceAttempt> {
   let lastError = "no items found";
   // 1) Direct fetch (free, fast).
   try {
-    const items = src.type === "rss" ? await fromRss(src.url) : await fromHtml(src.url);
+    const items = await fetchDirect(src);
     if (items.length > 0) return { items, sourceUsed: src.url };
     // Succeeded but nothing extractable (e.g. a JS-rendered SPA with no server-side
     // article links) — record this, not just thrown errors, so the final message
@@ -300,8 +400,8 @@ async function crawlSource(src: CompetitorSource): Promise<SourceAttempt> {
   }
   // 2) Free headless-browser fallback — fixes pure client-rendered SPAs (no server-side
   // article links) by actually executing the page's JS. Only helps sites that aren't ALSO
-  // actively bot-blocked (see headlessBrowser.ts) — HTML sources only, RSS needs no
-  // rendering. Tried before the paid proxy since it costs nothing.
+  // actively bot-blocked (see headlessBrowser.ts) — HTML sources only, RSS/JSON sources
+  // need no rendering. Tried before the paid proxy since it costs nothing.
   if (src.type === "html") {
     try {
       const html = await renderPageHtml(src.url);
@@ -313,7 +413,9 @@ async function crawlSource(src: CompetitorSource): Promise<SourceAttempt> {
     }
   }
   // 3) Proxy fallback — renders JS / bypasses anti-bot (Cloudflare). Opt-in via env.
-  if (scraperConfigured()) {
+  // Only for markup/feed sources: the JSON sources (next-data, binance-api) are not
+  // bot-gated, so a proxy retry after a direct failure would just re-fetch the same JSON.
+  if (scraperConfigured() && (src.type === "rss" || src.type === "html")) {
     try {
       const text = await scraperFetchText(src.url, { render: src.type === "html" });
       const items = src.type === "rss" ? await fromRssText(text) : extractHtmlLinks(text, src.url);

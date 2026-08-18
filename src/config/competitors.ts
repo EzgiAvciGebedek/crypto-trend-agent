@@ -11,7 +11,14 @@
 // redirect to the English page) are listed — guessing locale URLs blindly for sites that
 // don't actually localize their blog just adds noise, not coverage.
 
-export type SourceType = "rss" | "html";
+// Source types beyond rss/html exist for sites that serve no usable markup at all:
+//  - "next-data"   → the page is a Next.js SPA whose server HTML has no article links,
+//                    but whose `/_next/data/<buildId>/…json` endpoint serves the listing
+//                    as structured JSON (build id discovered from the page itself).
+//  - "binance-api" → Binance's public CMS JSON API — their blog/announcement pages are
+//                    behind aggressive bot mitigation (HTTP 202 + empty body), the API
+//                    serves the same content without it.
+export type SourceType = "rss" | "html" | "next-data" | "binance-api";
 
 export interface CompetitorSource {
   url: string;
@@ -47,7 +54,14 @@ export const COMPETITOR_SITES: Competitor[] = [
     id: "binance",
     name: "Binance",
     homepage: "https://www.binance.com",
+    // The HTML pages sit behind aggressive bot mitigation (HTTP 202 + empty body, even to
+    // real-browser UAs), so the public CMS JSON API — which serves the same blog/
+    // announcement listings — is the primary source; HTML pages stay as fallbacks.
     sources: [
+      {
+        url: "https://www.binance.com/bapi/composite/v1/public/cms/article/list/query?type=1&pageNo=1&pageSize=20",
+        type: "binance-api",
+      },
       { url: "https://www.binance.com/en/blog", type: "html" },
       { url: "https://www.binance.com/en/feed", type: "html" },
     ],
@@ -93,9 +107,12 @@ export const COMPETITOR_SITES: Competitor[] = [
     id: "trading212",
     name: "Trading 212",
     homepage: "https://www.trading212.com",
+    // The blog is gone (verified live 2026-08): /blog 307-redirects to /invest and
+    // /blog/feed serves the /invest HTML page. Their living content channels are now the
+    // official community forum (Discourse — fresh, dated RSS) and the /learn guides hub.
     sources: [
-      { url: "https://www.trading212.com/blog/feed", type: "rss" },
-      { url: "https://www.trading212.com/blog", type: "html" },
+      { url: "https://community.trading212.com/latest.rss", type: "rss" },
+      { url: "https://www.trading212.com/learn", type: "html" },
     ],
   },
   {
@@ -119,9 +136,12 @@ export const COMPETITOR_SITES: Competitor[] = [
     homepage: "https://www.blockchain.com",
     // No RSS feed exists at this domain (verified live — /blog/feed is a 404, not a
     // guess gone stale). /blog itself is a Next.js SPA with no article links in the
-    // server-rendered HTML, so this source needs the render proxy (SCRAPER_API_KEY) to
-    // ever return content — same category as Binance/Bitvavo/Revolut/Trading212/Bybit.
-    sources: [{ url: "https://www.blockchain.com/blog", type: "html" }],
+    // server-rendered HTML, but its `/_next/data/<buildId>/index.json` endpoint serves
+    // the same ButterCMS post listing as structured JSON — no rendering or proxy needed.
+    sources: [
+      { url: "https://www.blockchain.com/blog", type: "next-data" },
+      { url: "https://www.blockchain.com/blog", type: "html" },
+    ],
   },
   {
     id: "kraken",
@@ -132,23 +152,17 @@ export const COMPETITOR_SITES: Competitor[] = [
       { url: "https://blog.kraken.com/", type: "html" },
     ],
   },
-  {
-    id: "blox",
-    name: "Blox",
-    homepage: "https://blox.io",
-    sources: [
-      { url: "https://blox.io/blog/feed", type: "rss" },
-      { url: "https://blox.io/en/blog", type: "html" },
-      { url: "https://blox.io/blog", type: "html" },
-    ],
-  },
+  // NOTE: Blox was removed 2026-08 — blox.io is a parked domain now ("TransIP - Reserved
+  // domain"); the company was absorbed by eToro and publishes no content there anymore.
   {
     id: "capital-com",
     name: "Capital.com",
     homepage: "https://capital.com",
+    // The bare paths /markets-news and /analysis now 301 to the /en-int homepage — the
+    // news/analysis sections live under the locale prefix (verified live 2026-08).
     sources: [
-      { url: "https://capital.com/markets-news", type: "html" },
-      { url: "https://capital.com/analysis", type: "html" },
+      { url: "https://capital.com/en-int/news", type: "html" },
+      { url: "https://capital.com/en-int/analysis", type: "html" },
     ],
   },
 ];
