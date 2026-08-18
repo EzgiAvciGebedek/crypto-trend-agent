@@ -42,8 +42,16 @@ const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 // exact 60s FUNCTION_INVOCATION_TIMEOUT even with this budget in place, while two
 // consecutive WARM invocations right after finished in 20s and 37s. Since the scheduled
 // cron runs once a day, it is realistically ALWAYS cold, so the budget has to assume a
-// meaningful chunk of the 60s is already gone before this line runs — hence 35s, not 45s.
-const CRAWL_BUDGET_MS = 35_000;
+// meaningful chunk of the 60s is already gone before this line runs.
+//
+// 35s was a defensive reaction to a since-fixed bug: closeBrowser() (see headlessBrowser.ts)
+// used to have no timeout of its own, so tightening THIS budget couldn't actually protect
+// the route — the real unbounded step was downstream, in the caller's `finally`. Now that
+// closeBrowser() is itself capped at ~8s, this can afford to be more generous again: 45s
+// crawl + ~8s close + response overhead leaves real margin under 60s even on a cold start,
+// and gives headless-dependent competitors (bitvavo, bunq, bybit) a realistic chance to
+// finish instead of timing out on almost every cold run.
+const CRAWL_BUDGET_MS = 45_000;
 
 const rss: Parser = new Parser({
   timeout: PER_SOURCE_TIMEOUT_MS,
