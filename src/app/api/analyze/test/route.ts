@@ -4,17 +4,34 @@ import { CORE_COINS } from "@/config/coins";
 import { collectMarketTrends } from "@/lib/gtrends";
 import { fetchMarketNews, countMentions, extractNewsKeywords } from "@/lib/rss";
 import { getGlobalSignals } from "@/lib/coingecko";
+import { getCmcSignals, formatGlobalMarket } from "@/lib/coinmarketcap";
+import { combineGlobalSignals, formatTrending, formatMovers } from "@/lib/globalMarket";
 import { COMPETITORS } from "@/config/themes";
 import { getRedditSignal } from "@/lib/reddit";
 import { assembleMarketPackage } from "@/lib/assemble";
 import { analyzeMarket, isClaudeConfigured } from "@/lib/claude";
+import { allowByInterval } from "@/lib/security";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
+// This endpoint spends Claude tokens + hits third-party APIs, so it must not be open to the
+// public. Allow only the secret-authenticated caller or a same-origin request, then throttle.
+function authorized(req: Request): boolean {
+  const secret = process.env.CRON_SECRET;
+  const header = req.headers.get("authorization");
+  if (secret && header === `Bearer ${secret}`) return true;
+  return req.headers.get("sec-fetch-site") === "same-origin";
+}
+
 // End-to-end single-market test: collect sources → assemble → Claude analysis.
 // ?geo=NL (default). ?trends=0 skips Trends (speed/degrade test).
 export async function GET(req: Request) {
+  if (!authorized(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!allowByInterval("analyze:test", 15_000)) {
+    return NextResponse.json({ error: "rate_limited" }, { status: 429 });
+  }
+
   const url = new URL(req.url);
   const market = getMarket(url.searchParams.get("geo") ?? "NL");
   if (!market) return NextResponse.json({ error: "invalid market" }, { status: 400 });
@@ -23,9 +40,12 @@ export async function GET(req: Request) {
   const date = new Date().toISOString().slice(0, 10);
   const failedSources: string[] = [];
 
-  // Global signals (CoinGecko + Reddit)
+  // Global signals (CoinGecko + CoinMarketCap + Reddit)
   const global = await getGlobalSignals();
   if (!global.ok) failedSources.push("coingecko");
+  const cmc = await getCmcSignals();
+  if (!cmc.ok) failedSources.push("coinmarketcap");
+  const combined = combineGlobalSignals(global, cmc);
   const reddit = await getRedditSignal();
   if (!reddit.ok) failedSources.push("reddit");
 
@@ -63,7 +83,9 @@ export async function GET(req: Request) {
     todayMentions: mentions,
     newsKeywords,
     genericSignals,
-    globalTrending: global.trending.slice(0, 10).map((c) => c.name),
+    globalTrending: formatTrending(combined.trending),
+    topMovers: formatMovers(combined.gainers, combined.losers),
+    cmcGlobal: formatGlobalMarket(cmc.global),
     redditTopics: reddit.topicMentions.slice(0, 8).map((t) => t.topic),
     failedSources,
   });

@@ -15,9 +15,9 @@ export interface TopicMetric {
   mentions: number;
 }
 
-// Accessible colors, readable in both light and dark themes.
-const INTEREST = "#2563eb"; // blue
-const MENTIONS = "#059669"; // green
+// Accessible colors, readable in both light and dark themes — brand teal + supporting purple.
+const INTEREST = "#14b8b8"; // teal (brand)
+const MENTIONS = "#8b5cf6"; // purple (supporting)
 
 export default function MarketCharts({ data }: { data: TopicMetric[] }) {
   const interestData = data.filter((d) => d.interest !== null).slice(0, 10);

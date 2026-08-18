@@ -1,24 +1,33 @@
 import { NextResponse } from "next/server";
 import { runDaily } from "@/lib/cron";
 import { getMarket, type MarketCode } from "@/config/markets";
+import { allowByInterval } from "@/lib/security";
 
 export const runtime = "nodejs";
 export const maxDuration = 60; // Vercel Hobby function time limit
 
+const MANUAL_MIN_INTERVAL_MS = 15_000; // throttle same-origin (button) triggers
+
 // Vercel cron triggers via GET with an Authorization: Bearer <CRON_SECRET> header.
 // The dashboard "Run analysis now" button POSTs from the same origin.
-function authorized(req: Request): boolean {
+type Auth = "secret" | "same-origin" | null;
+function authorize(req: Request): Auth {
   const secret = process.env.CRON_SECRET;
   const header = req.headers.get("authorization");
-  if (secret && header === `Bearer ${secret}`) return true;
-  // Manual trigger from the same origin (dashboard button) — works even without CRON_SECRET.
-  const isSameOrigin = req.headers.get("sec-fetch-site") === "same-origin";
-  return isSameOrigin;
+  if (secret && header === `Bearer ${secret}`) return "secret"; // trusted scheduler
+  if (req.headers.get("sec-fetch-site") === "same-origin") return "same-origin";
+  return null;
 }
 
 async function handle(req: Request) {
-  if (!authorized(req)) {
+  const auth = authorize(req);
+  if (!auth) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  // Rate-limit manual/button triggers so the expensive pipeline can't be spammed.
+  // The secret-authenticated scheduler path is exempt (it self-schedules).
+  if (auth === "same-origin" && !allowByInterval("cron:daily", MANUAL_MIN_INTERVAL_MS)) {
+    return NextResponse.json({ error: "rate_limited", retryAfterMs: MANUAL_MIN_INTERVAL_MS }, { status: 429 });
   }
   // Optional: ?market=NL refresh a single market · ?trends=0 skip Trends (speed)
   const url = new URL(req.url);

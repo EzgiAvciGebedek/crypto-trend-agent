@@ -11,6 +11,7 @@ import type {
   SourceHealth,
   CryptoOverall,
 } from "./types";
+import type { CompetitorResult } from "./competitors";
 
 // --- Writes ---
 
@@ -55,6 +56,27 @@ export async function saveHealth(date: string, rows: SourceHealth[]): Promise<vo
   await db.from("source_health").insert(rows.map((r) => ({ date, source: r.source, ok: r.ok, detail: r.detail })));
 }
 
+// Persists the daily Competitor Radar crawl so it's visible to every visitor/instance —
+// the crawler's own 30-min cache is in-process only and doesn't survive across serverless
+// instances, so without this the "daily" crawl wasn't reliably daily for users.
+export async function saveCompetitorContent(date: string, results: CompetitorResult[]): Promise<void> {
+  const db = getSupabase();
+  if (!db || results.length === 0) return;
+  const rows = results.map((r) => ({
+    date,
+    competitor_id: r.id,
+    competitor: r.name,
+    homepage: r.homepage,
+    items: r.items,
+    keywords: r.keywords,
+    source_used: r.sourceUsed,
+    via: r.via ?? null,
+    ok: r.ok,
+    error: r.error ?? null,
+  }));
+  await db.from("competitor_content").upsert(rows, { onConflict: "date,competitor_id" });
+}
+
 // --- Reads ---
 
 export async function latestDate(): Promise<string | null> {
@@ -68,6 +90,21 @@ export async function latestDate(): Promise<string | null> {
   return data?.[0]?.date ?? null;
 }
 
+// Most recent date that has recommendations for a specific market. The market detail page
+// uses this (not the global latestDate) so a partial daily run doesn't leave a market's
+// detail page blank while an older, complete analysis exists.
+export async function latestDateForMarket(market: MarketCode): Promise<string | null> {
+  const db = getSupabase();
+  if (!db) return null;
+  const { data } = await db
+    .from("recommendations")
+    .select("date")
+    .eq("market_code", market)
+    .order("date", { ascending: false })
+    .limit(1);
+  return data?.[0]?.date ?? null;
+}
+
 export async function getRecommendations(date: string, market?: MarketCode): Promise<Recommendation[]> {
   const db = getSupabase();
   if (!db) return [];
@@ -75,6 +112,43 @@ export async function getRecommendations(date: string, market?: MarketCode): Pro
   if (market) q = q.eq("market_code", market);
   const { data } = await q;
   return (data ?? []) as Recommendation[];
+}
+
+// Each market's most-recent recommendations, regardless of a single global date.
+// Partial daily runs leave some markets on an older date; the overview should still
+// show their latest available analysis instead of "No analysis data yet".
+export async function getLatestRecommendationsPerMarket(): Promise<Record<string, Recommendation[]>> {
+  const db = getSupabase();
+  if (!db) return {};
+  const { data } = await db
+    .from("recommendations")
+    .select("*")
+    .order("date", { ascending: false })
+    .limit(2000);
+  const out: Record<string, Recommendation[]> = {};
+  const latestDateByMarket: Record<string, string> = {};
+  for (const r of (data ?? []) as Recommendation[]) {
+    // first row seen for a market = its most recent date (desc order)
+    if (!latestDateByMarket[r.market_code]) latestDateByMarket[r.market_code] = r.date;
+    if (r.date === latestDateByMarket[r.market_code]) (out[r.market_code] ??= []).push(r);
+  }
+  return out;
+}
+
+// Each market's most-recent summary (see getLatestRecommendationsPerMarket).
+export async function getLatestSummariesPerMarket(): Promise<Record<string, MarketSummary>> {
+  const db = getSupabase();
+  if (!db) return {};
+  const { data } = await db
+    .from("market_summaries")
+    .select("*")
+    .order("date", { ascending: false })
+    .limit(500);
+  const out: Record<string, MarketSummary> = {};
+  for (const s of (data ?? []) as MarketSummary[]) {
+    if (!out[s.market_code]) out[s.market_code] = s; // first = latest
+  }
+  return out;
 }
 
 export async function getSummaries(date: string): Promise<MarketSummary[]> {
@@ -173,6 +247,40 @@ export async function getLatestCryptoOverall(): Promise<Record<string, CryptoOve
     if (!map[r.market_code]) map[r.market_code] = r; // first seen = most recent (desc order)
   }
   return map;
+}
+
+// Each competitor's most recent persisted crawl (mirrors getLatestRecommendationsPerMarket's
+// pattern). Returns [] when the table doesn't exist yet (pre-migration) or DB is unset —
+// callers fall back to a live crawl in that case.
+export async function getLatestCompetitorContent(): Promise<CompetitorResult[]> {
+  const db = getSupabase();
+  if (!db) return [];
+  const { data } = await db
+    .from("competitor_content")
+    .select("*")
+    .order("date", { ascending: false })
+    .limit(200);
+  const seen = new Map<string, CompetitorResult>();
+  for (const r of (data ?? []) as Array<Record<string, unknown>>) {
+    const id = r.competitor_id as string;
+    if (seen.has(id)) continue; // first seen per competitor = most recent (desc order)
+    const items = (r.items as CompetitorResult["items"]) ?? [];
+    // `langs` isn't its own column — derived from the items themselves (no migration needed).
+    const langs = [...new Set(items.map((i) => i.lang).filter((l): l is string => Boolean(l)))];
+    seen.set(id, {
+      id,
+      name: r.competitor as string,
+      homepage: r.homepage as string,
+      items,
+      keywords: (r.keywords as CompetitorResult["keywords"]) ?? [],
+      sourceUsed: (r.source_used as string | null) ?? null,
+      via: (r.via as string | undefined) ?? undefined,
+      ok: Boolean(r.ok),
+      error: (r.error as string | undefined) ?? undefined,
+      langs: langs.length > 0 ? langs : undefined,
+    });
+  }
+  return [...seen.values()];
 }
 
 export async function availableDates(limit = 30): Promise<string[]> {

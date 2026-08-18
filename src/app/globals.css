@@ -1,26 +1,148 @@
 @import "tailwindcss";
 
+/* ------------------------------------------------------------------ */
+/* Design tokens                                                       */
+/* Palette + type scale adapted from a modern fintech reference        */
+/* (teal accent, coral negative, near-black dark surface, Inter type). */
+/* Light values on :root, dark overrides under prefers-color-scheme.   */
+/* Tailwind v4 maps --color-* → bg-/text-/border- utilities,           */
+/* --radius-* → rounded-, --shadow-* → shadow-.                        */
+/* ------------------------------------------------------------------ */
+
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #0f0f0f;
+
+  /* semantic surfaces */
+  --surface: #ffffff;
+  --surface-2: #f7f7f7;
+  --surface-3: #ebebeb;
+  --border: #ebebeb;
+  --border-strong: #d9d9d9;
+  --muted: #696969;
+
+  /* semantic state colors (mild = tinted background, solid = text/icon) */
+  --positive: #006c75;
+  --positive-mild: #e7f8f4;
+  --negative: #ff526f;
+  --negative-mild: #fdf1f3;
+  --warning: #995900;
+  --warning-mild: #fdf8dd;
+  --supporting: #6c54b6;
+  --supporting-mild: #f4f1fd;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-border-token: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-muted: var(--muted);
+
+  --color-positive: var(--positive);
+  --color-positive-mild: var(--positive-mild);
+  --color-negative: var(--negative);
+  --color-negative-mild: var(--negative-mild);
+  --color-warning: var(--warning);
+  --color-warning-mild: var(--warning-mild);
+  --color-supporting: var(--supporting);
+  --color-supporting-mild: var(--supporting-mild);
+
+  /* brand accent ramp — teal, anchored on the light/dark accent above */
+  --color-brand-50: #e7f8f4;
+  --color-brand-100: #ccf0ea;
+  --color-brand-200: #99e0d4;
+  --color-brand-300: #5fd1c4;
+  --color-brand-400: #2ec4b6;
+  --color-brand-500: #14b8b8;
+  --color-brand-600: #0d9488;
+  --color-brand-700: #006c75;
+
+  --font-sans: var(--font-inter);
   --font-mono: var(--font-geist-mono);
+
+  /* shape + elevation */
+  --radius-card: 1rem;
+  --radius-control: 0.5rem;
+  --shadow-card: 0 4px 20px 0 rgb(0 0 0 / 0.08);
+  --shadow-card-hover: 0 4px 40px 0 rgb(0 0 0 / 0.13);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #0f0f0f;
+    --foreground: #ffffff;
+    --surface: #1f1f1f;
+    --surface-2: #262626;
+    --surface-3: #333333;
+    --border: #333333;
+    --border-strong: #545454;
+    --muted: #a8a8a8;
+
+    --positive: #14b8b8;
+    --positive-mild: #002f33;
+    --negative: #ff526f;
+    --negative-mild: #552029;
+    --warning: #ffd06b;
+    --warning-mild: #3d2c00;
+    --supporting: #b399ff;
+    --supporting-mild: #35285d;
+
+    --shadow-card: 0 4px 20px 0 rgb(0 0 0 / 0.35);
+    --shadow-card-hover: 0 4px 40px 0 rgb(0 0 0 / 0.5);
   }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* ------------------------------------------------------------------ */
+/* Base polish                                                          */
+/* ------------------------------------------------------------------ */
+
+@layer base {
+  /* Smooth, consistent interaction transitions on interactive elements. */
+  a,
+  button,
+  [role="button"] {
+    transition:
+      color 0.15s ease,
+      background-color 0.15s ease,
+      border-color 0.15s ease,
+      box-shadow 0.15s ease,
+      transform 0.15s ease;
+  }
+
+  /* Accessible, on-brand focus ring everywhere (keyboard only). */
+  :focus-visible {
+    outline: 2px solid var(--positive);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--positive) 28%, transparent);
+  }
+
+  /* Slim, unobtrusive scrollbars. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: 9999px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
 }

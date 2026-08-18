@@ -5,6 +5,7 @@ export type SourceType =
   | "gtrends_rising"
   | "gtrends_daily"
   | "coingecko"
+  | "coinmarketcap"
   | "rss"
   | "reddit";
 
