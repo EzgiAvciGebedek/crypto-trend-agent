@@ -116,6 +116,24 @@ async function fromHtml(pageUrl: string): Promise<CompetitorItem[]> {
   return extractHtmlLinks(html, pageUrl);
 }
 
+// Some sites flatten a "category" tag + title + publish date into one anchor's text with
+// no separate <time> element to target — e.g. Revolut: "Financial basics Best places to
+// visit in January 30 June 2026". Split a trailing "DD Month YYYY" into a real isoDate
+// instead of leaving it glued to the title — this both cleans the title AND lets the item
+// rank correctly by actual date instead of sinking to the bottom as "undated".
+const MONTHS = "January|February|March|April|May|June|July|August|September|October|November|December";
+const TRAILING_DATE_RE = new RegExp(`\\s+(\\d{1,2})\\s+(${MONTHS})\\s+(\\d{4})$`, "i");
+
+function splitTrailingDate(text: string): { title: string; isoDate: string | null } {
+  const m = text.match(TRAILING_DATE_RE);
+  if (!m) return { title: text, isoDate: null };
+  const [full, day, month, year] = m;
+  const parsed = new Date(`${day} ${month} ${year} UTC`);
+  if (Number.isNaN(parsed.getTime())) return { title: text, isoDate: null };
+  const title = text.slice(0, -full.length).trim();
+  return { title: title.length >= 15 ? title : text, isoDate: parsed.toISOString() };
+}
+
 // Pure extractor: pull article-like links from already-fetched HTML.
 function extractHtmlLinks(html: string, pageUrl: string): CompetitorItem[] {
   const base = new URL(pageUrl);
@@ -155,7 +173,8 @@ function extractHtmlLinks(html: string, pageUrl: string): CompetitorItem[] {
     const key = abs.href.replace(/[?#].*$/, "");
     if (seen.has(key)) continue;
     seen.add(key);
-    items.push({ title: text, url: abs.href, isoDate: null });
+    const { title, isoDate } = splitTrailingDate(text);
+    items.push({ title, url: abs.href, isoDate });
     if (items.length >= MAX_ITEMS_PER_SOURCE) break;
   }
   return items;
