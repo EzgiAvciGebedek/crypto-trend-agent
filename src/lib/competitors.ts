@@ -202,6 +202,11 @@ function stripTags(html: string): string {
 
 const CONTENT_PATH = /\/(blog|news|article|articles|learn|insights|press|academy|analysis|research|updates?)\//i;
 const DATE_PATH = /\/20\d{2}\//;
+// Listing/hub pages (a category index, a tag page) sit at content-shaped paths too — e.g.
+// OKX's footer links to /learn/category/trends, a hub with real-looking nested text ("Crypto
+// news — Stay on top of the latest crypto news and trends") that isn't an article at all.
+// CONTENT_PATH alone can't tell them apart from a real post, so exclude them explicitly.
+const CATEGORY_PATH = /\/(category|categories|tag|tags|topic|topics)\//i;
 const NAV_TEXT = /^(home|login|log in|sign ?up|sign in|register|about|about us|careers?|contact|support|help|cookies?|privacy|terms|download|pricing|products?|features?|company|blog|news|menu|search|next|previous|read more|learn more|more|all|view all|see all)$/i;
 
 // Slug-looking last path segment (hyphenated, several words) → a title fallback.
@@ -297,7 +302,7 @@ function extractHtmlLinks(html: string, pageUrl: string): CompetitorItem[] {
     // Qualify only real content sections (blog/news/dated). Arbitrary slug-like links are
     // NOT enough on their own — they pull in nav/footer junk (terms, fees, about…).
     const isContent = CONTENT_PATH.test(path) || DATE_PATH.test(path);
-    if (!isContent) continue;
+    if (!isContent || CATEGORY_PATH.test(path)) continue;
 
     if (!text || text.length < 20) {
       // anchor text too short → derive a readable title from the slug

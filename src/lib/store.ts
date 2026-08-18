@@ -12,6 +12,7 @@ import type {
   CryptoOverall,
 } from "./types";
 import type { CompetitorResult } from "./competitors";
+import { COMPETITOR_SITES } from "@/config/competitors";
 
 // --- Writes ---
 
@@ -260,9 +261,14 @@ export async function getLatestCompetitorContent(): Promise<CompetitorResult[]> 
     .select("*")
     .order("date", { ascending: false })
     .limit(200);
+  // A competitor removed from the config (e.g. a dead/parked site) leaves its last row
+  // behind in the DB forever otherwise — filter to only what's still actually configured,
+  // so a removal doesn't require a manual DB cleanup to stop showing a dead card.
+  const configuredIds = new Set(COMPETITOR_SITES.map((c) => c.id));
   const seen = new Map<string, CompetitorResult>();
   for (const r of (data ?? []) as Array<Record<string, unknown>>) {
     const id = r.competitor_id as string;
+    if (!configuredIds.has(id)) continue;
     if (seen.has(id)) continue; // first seen per competitor = most recent (desc order)
     const items = (r.items as CompetitorResult["items"]) ?? [];
     // `langs` isn't its own column — derived from the items themselves (no migration needed).
