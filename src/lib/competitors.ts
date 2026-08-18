@@ -14,6 +14,7 @@ import { COMPETITOR_SITES, type Competitor } from "@/config/competitors";
 import { fetchWithTimeout } from "./http";
 import { isSafePublicUrl, readTextCapped } from "./security";
 import { scraperConfigured, scraperFetchText, scraperName } from "./scraper";
+import { renderPageHtml, closeBrowser } from "./headlessBrowser";
 
 const BROWSER_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
@@ -226,7 +227,25 @@ async function crawlOne(c: Competitor): Promise<CompetitorResult> {
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
     }
-    // 2) Proxy fallback — renders JS / bypasses anti-bot (Cloudflare). Opt-in via env.
+    // 2) Free headless-browser fallback — fixes pure client-rendered SPAs (no server-side
+    // article links) by actually executing the page's JS. Only helps sites that aren't
+    // ALSO actively bot-blocked (see headlessBrowser.ts) — for HTML sources only, RSS
+    // needs no rendering. Tried before the paid proxy since it costs nothing.
+    if (src.type === "html") {
+      try {
+        const html = await renderPageHtml(src.url);
+        if (html) {
+          const items = extractHtmlLinks(html, src.url);
+          if (items.length > 0) return finish(items, src.url, "headless-chromium");
+          lastError = "headless: no items found (page returned no extractable content)";
+        } else {
+          lastError = "headless render unavailable (local dev, or the page failed to load)";
+        }
+      } catch (err) {
+        lastError = `headless: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+    // 3) Proxy fallback — renders JS / bypasses anti-bot (Cloudflare). Opt-in via env.
     // Also runs when the direct fetch returned 0 items (JS-rendered SPA).
     if (scraperConfigured()) {
       try {
@@ -250,9 +269,15 @@ let cache: { at: number; data: CompetitorResult[] } | null = null;
 // daily refresh and shouldn't serve a stale in-process cache from a previous invocation.
 export async function crawlAllCompetitors(forceFresh = false): Promise<CompetitorResult[]> {
   if (!forceFresh && cache && Date.now() - cache.at < CACHE_TTL_MS) return cache.data;
-  const data = await Promise.all(COMPETITOR_SITES.map((c) => crawlOne(c)));
-  cache = { at: Date.now(), data };
-  return data;
+  try {
+    const data = await Promise.all(COMPETITOR_SITES.map((c) => crawlOne(c)));
+    cache = { at: Date.now(), data };
+    return data;
+  } finally {
+    // Close the shared headless browser (if any site needed it) so the serverless
+    // invocation can wind down cleanly instead of leaving a Chromium process behind.
+    await closeBrowser();
+  }
 }
 
 // Newest items across all competitors, tagged with the competitor name, capped at `limit`.

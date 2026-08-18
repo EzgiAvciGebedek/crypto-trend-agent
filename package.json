@@ -10,10 +10,12 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.117.1",
+    "@sparticuz/chromium": "^149.0.0",
     "@supabase/supabase-js": "^2.112.3",
     "google-trends-api": "^4.9.2",
     "https-proxy-agent": "^9.1.0",
     "next": "^16.3.1",
+    "puppeteer-core": "^25.8.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "recharts": "^3.10.1",
