@@ -155,6 +155,16 @@ export const COMPETITOR_SITES: Competitor[] = [
   // NOTE: Blox was removed 2026-08 — blox.io is a parked domain now ("TransIP - Reserved
   // domain"); the company was absorbed by eToro and publishes no content there anymore.
   {
+    id: "okx",
+    name: "OKX",
+    homepage: "https://www.okx.com",
+    // No RSS feed exists (verified live — /learn/feed and /help/rss.xml both bounce to a
+    // generic SPA shell, 404). /en-us/learn IS server-rendered with real article links
+    // though (verified live, unlike most of this site), so no headless/proxy tier needed
+    // for it to work.
+    sources: [{ url: "https://www.okx.com/en-us/learn", type: "html", lang: "en" }],
+  },
+  {
     id: "capital-com",
     name: "Capital.com",
     homepage: "https://capital.com",
