@@ -34,7 +34,16 @@ const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 // Confirmed live: querying competitor_content's `date` column showed exactly one distinct
 // date ever — today, and only after a manual trigger — meaning the scheduled cron had never
 // once finished in time on its own since this table existed.
-const CRAWL_BUDGET_MS = 45_000;
+//
+// This budget is measured from INSIDE our own code, which starts running only after the
+// serverless container is already up — it does NOT cover Vercel's own cold-start cost
+// (loading puppeteer-core/@sparticuz/chromium, unpacking the ~50MB chromium binary). That
+// cost is invisible to us but very real: confirmed live, a cold invocation still hit the
+// exact 60s FUNCTION_INVOCATION_TIMEOUT even with this budget in place, while two
+// consecutive WARM invocations right after finished in 20s and 37s. Since the scheduled
+// cron runs once a day, it is realistically ALWAYS cold, so the budget has to assume a
+// meaningful chunk of the 60s is already gone before this line runs — hence 35s, not 45s.
+const CRAWL_BUDGET_MS = 35_000;
 
 const rss: Parser = new Parser({
   timeout: PER_SOURCE_TIMEOUT_MS,
