@@ -12,9 +12,10 @@
 //
 // @sparticuz/chromium ships a Linux binary built specifically for AWS Lambda/Vercel's
 // serverless runtime — it can only launch there, not on a local macOS/Windows dev machine
-// (spawn ENOEXEC). getBrowser() degrades to null (skip this tier) if launching fails for
-// any reason, so local dev and any packaging hiccup both fail safely rather than crash
-// the crawl.
+// (spawn ENOEXEC). renderPageHtml() throws with the real error on failure; the caller
+// (competitors.ts) catches it and just skips this tier for that source, same as any other
+// failed fetch — local dev and any packaging hiccup both degrade safely, they just no
+// longer fail *silently*, which made a real bug (see git history) impossible to diagnose.
 
 import type { Browser, Page } from "puppeteer-core";
 
@@ -25,29 +26,38 @@ const MAX_CONCURRENT_PAGES = 3; // bounds memory — headless tabs add up fast i
 const BROWSER_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 
-let browserPromise: Promise<Browser | null> | null = null;
+let browserPromise: Promise<Browser> | null = null;
+let launchError: string | null = null;
 
-async function launchBrowser(): Promise<Browser | null> {
-  try {
-    const [{ default: puppeteer }, { default: chromium }] = await Promise.all([
-      import("puppeteer-core"),
-      import("@sparticuz/chromium"),
-    ]);
-    return await puppeteer.launch({
-      args: chromium.args,
-      executablePath: await chromium.executablePath(),
-      headless: true,
-    });
-  } catch {
-    return null;
-  }
+async function launchBrowser(): Promise<Browser> {
+  const [{ default: puppeteer }, { default: chromium }] = await Promise.all([
+    import("puppeteer-core"),
+    import("@sparticuz/chromium"),
+  ]);
+  return puppeteer.launch({
+    args: chromium.args,
+    executablePath: await chromium.executablePath(),
+    headless: true,
+  });
 }
 
 // One shared browser per crawl run — launching Chromium is slow (~1-3s), so we reuse it
 // across every competitor that needs the headless tier instead of relaunching per site.
-function getBrowser(): Promise<Browser | null> {
-  if (!browserPromise) browserPromise = launchBrowser();
+// Throws (with the real error message) on failure — callers decide how to report/degrade;
+// swallowing it here made "why didn't this work" impossible to diagnose from the outside.
+function getBrowser(): Promise<Browser> {
+  if (!browserPromise) {
+    browserPromise = launchBrowser().catch((err) => {
+      launchError = err instanceof Error ? err.message : String(err);
+      browserPromise = null; // allow a retry on the next call instead of caching the failure forever
+      throw err;
+    });
+  }
   return browserPromise;
+}
+
+export function lastLaunchError(): string | null {
+  return launchError;
 }
 
 // Counting semaphore so we never have more than MAX_CONCURRENT_PAGES tabs open at once
@@ -68,12 +78,11 @@ function releaseSlot(): void {
   if (next) next();
 }
 
-// Renders `url` in a real (headless) browser and returns the final HTML, or null if the
-// browser can't launch (local dev, packaging issue) or the page fails to load in time.
-export async function renderPageHtml(url: string, timeoutMs = NAV_TIMEOUT_MS): Promise<string | null> {
+// Renders `url` in a real (headless) browser and returns the final HTML. Throws (with the
+// real error message — launch failure, navigation timeout, etc.) rather than swallowing
+// failures, so callers can report an accurate reason instead of a generic "didn't work".
+export async function renderPageHtml(url: string, timeoutMs = NAV_TIMEOUT_MS): Promise<string> {
   const browser = await getBrowser();
-  if (!browser) return null;
-
   await acquireSlot();
   let page: Page | undefined;
   try {
@@ -82,8 +91,6 @@ export async function renderPageHtml(url: string, timeoutMs = NAV_TIMEOUT_MS): P
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
     await new Promise((r) => setTimeout(r, RENDER_SETTLE_MS));
     return await page.content();
-  } catch {
-    return null;
   } finally {
     if (page) await page.close().catch(() => {});
     releaseSlot();

@@ -234,13 +234,9 @@ async function crawlOne(c: Competitor): Promise<CompetitorResult> {
     if (src.type === "html") {
       try {
         const html = await renderPageHtml(src.url);
-        if (html) {
-          const items = extractHtmlLinks(html, src.url);
-          if (items.length > 0) return finish(items, src.url, "headless-chromium");
-          lastError = "headless: no items found (page returned no extractable content)";
-        } else {
-          lastError = "headless render unavailable (local dev, or the page failed to load)";
-        }
+        const items = extractHtmlLinks(html, src.url);
+        if (items.length > 0) return finish(items, src.url, "headless-chromium");
+        lastError = "headless: no items found (page returned no extractable content)";
       } catch (err) {
         lastError = `headless: ${err instanceof Error ? err.message : String(err)}`;
       }
