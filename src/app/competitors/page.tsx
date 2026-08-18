@@ -66,6 +66,9 @@ function CompetitorCard({ r }: { r: CompetitorResult }) {
         <p className="mt-0.5 text-[11px] text-[var(--muted)] truncate">
           via {hostOf(r.sourceUsed)}
           {r.via && <span className="text-brand-500"> · rendered ({r.via})</span>}
+          {r.langs && r.langs.length > 1 && (
+            <span> · {r.langs.length} languages ({r.langs.join(", ").toUpperCase()})</span>
+          )}
         </p>
       )}
 
@@ -98,9 +101,16 @@ function CompetitorCard({ r }: { r: CompetitorResult }) {
           <ul className="space-y-2">
             {r.items.map((it, i) => (
               <li key={i} className="text-sm">
-                <a href={it.url} target="_blank" rel="noopener noreferrer" className="hover:underline">
-                  {it.title}
-                </a>
+                <div className="flex items-baseline gap-1.5">
+                  {it.lang && it.lang !== "en" && (
+                    <span className="shrink-0 rounded bg-[var(--surface-2)] px-1 py-0.5 text-[9px] font-semibold uppercase text-[var(--muted)]">
+                      {it.lang}
+                    </span>
+                  )}
+                  <a href={it.url} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                    {it.title}
+                  </a>
+                </div>
                 <div className="text-[11px] text-[var(--muted)] truncate">
                   {it.isoDate && <span className="mr-1">{new Date(it.isoDate).toLocaleDateString()} ·</span>}
                   {hostOf(it.url)}

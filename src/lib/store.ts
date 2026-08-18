@@ -264,16 +264,20 @@ export async function getLatestCompetitorContent(): Promise<CompetitorResult[]> 
   for (const r of (data ?? []) as Array<Record<string, unknown>>) {
     const id = r.competitor_id as string;
     if (seen.has(id)) continue; // first seen per competitor = most recent (desc order)
+    const items = (r.items as CompetitorResult["items"]) ?? [];
+    // `langs` isn't its own column — derived from the items themselves (no migration needed).
+    const langs = [...new Set(items.map((i) => i.lang).filter((l): l is string => Boolean(l)))];
     seen.set(id, {
       id,
       name: r.competitor as string,
       homepage: r.homepage as string,
-      items: (r.items as CompetitorResult["items"]) ?? [],
+      items,
       keywords: (r.keywords as CompetitorResult["keywords"]) ?? [],
       sourceUsed: (r.source_used as string | null) ?? null,
       via: (r.via as string | undefined) ?? undefined,
       ok: Boolean(r.ok),
       error: (r.error as string | undefined) ?? undefined,
+      langs: langs.length > 0 ? langs : undefined,
     });
   }
   return [...seen.values()];

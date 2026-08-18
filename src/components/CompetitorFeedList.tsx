@@ -47,6 +47,11 @@ export default function CompetitorFeedList({ items }: { items: AggregatedItem[] 
             <li key={i} className="flex items-baseline gap-2 text-sm">
               <span className="text-xs text-[var(--muted)] tabular-nums w-5 shrink-0">{i + 1}.</span>
               <div className="min-w-0">
+                {it.lang && it.lang !== "en" && (
+                  <span className="mr-1.5 rounded bg-[var(--surface-2)] px-1 py-0.5 text-[9px] font-semibold uppercase text-[var(--muted)]">
+                    {it.lang}
+                  </span>
+                )}
                 <a href={it.url} target="_blank" rel="noopener noreferrer" className="hover:underline">
                   {it.title}
                 </a>

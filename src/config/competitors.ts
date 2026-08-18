@@ -1,15 +1,22 @@
-// Competitor crawl targets. For each competitor we list candidate content sources in
-// priority order — the crawler tries them top-to-bottom and stops at the first that
-// yields items. RSS is preferred (structured, dated); HTML blog/news pages are a
-// heuristic fallback (article links extracted from the markup). Many of these sites are
-// JS-rendered SPAs, so a source may legitimately return nothing — the crawler degrades
-// gracefully and the card shows "no items found".
+// Competitor crawl targets. Sources are grouped by `lang` — for EACH language the
+// competitor publishes in, candidate URLs are tried top-to-bottom and the crawler stops
+// at the first that yields items for that language; results from every language are then
+// merged into one combined list per competitor (see crawlOne in lib/competitors.ts).
+// `lang` defaults to "en" when omitted. RSS is preferred (structured, dated); HTML blog/
+// news pages are a heuristic fallback (article links extracted from the markup). Many of
+// these sites are JS-rendered SPAs, so a source may legitimately return nothing — the
+// crawler degrades gracefully and the card shows "no items found".
+//
+// Only languages verified live to have real, distinct localized content (not just a
+// redirect to the English page) are listed — guessing locale URLs blindly for sites that
+// don't actually localize their blog just adds noise, not coverage.
 
 export type SourceType = "rss" | "html";
 
 export interface CompetitorSource {
   url: string;
   type: SourceType;
+  lang?: string; // ISO-ish market code (nl, de, fr, es, it, pl, pt) — defaults to "en"
 }
 
 export interface Competitor {
@@ -24,9 +31,16 @@ export const COMPETITOR_SITES: Competitor[] = [
     id: "bitvavo",
     name: "Bitvavo",
     homepage: "https://bitvavo.com",
+    // /blog redirects to /news on every locale (verified live) — updated from the old
+    // /blog path, which now 404s as an RSS guess but still 200s→redirects as HTML.
     sources: [
-      { url: "https://bitvavo.com/en/blog/feed", type: "rss" },
-      { url: "https://bitvavo.com/en/blog", type: "html" },
+      { url: "https://bitvavo.com/en/blog/feed", type: "rss", lang: "en" },
+      { url: "https://bitvavo.com/en/news", type: "html", lang: "en" },
+      { url: "https://bitvavo.com/nl/news", type: "html", lang: "nl" },
+      { url: "https://bitvavo.com/de/news", type: "html", lang: "de" },
+      { url: "https://bitvavo.com/fr/news", type: "html", lang: "fr" },
+      { url: "https://bitvavo.com/es/news", type: "html", lang: "es" },
+      { url: "https://bitvavo.com/it/news", type: "html", lang: "it" },
     ],
   },
   {
@@ -53,9 +67,14 @@ export const COMPETITOR_SITES: Competitor[] = [
     name: "bunq",
     homepage: "https://www.bunq.com",
     sources: [
-      { url: "https://www.bunq.com/blog/feed", type: "rss" },
-      { url: "https://www.bunq.com/blog", type: "html" },
-      { url: "https://together.bunq.com/", type: "html" },
+      { url: "https://www.bunq.com/blog/feed", type: "rss", lang: "en" },
+      { url: "https://www.bunq.com/blog", type: "html", lang: "en" },
+      { url: "https://together.bunq.com/", type: "html", lang: "en" },
+      { url: "https://www.bunq.com/nl/blog", type: "html", lang: "nl" },
+      { url: "https://www.bunq.com/de/blog", type: "html", lang: "de" },
+      { url: "https://www.bunq.com/fr/blog", type: "html", lang: "fr" },
+      { url: "https://www.bunq.com/es/blog", type: "html", lang: "es" },
+      { url: "https://www.bunq.com/it/blog", type: "html", lang: "it" },
     ],
   },
   {
@@ -82,8 +101,14 @@ export const COMPETITOR_SITES: Competitor[] = [
     name: "eToro",
     homepage: "https://www.etoro.com",
     sources: [
-      { url: "https://www.etoro.com/news-and-analysis/feed/", type: "rss" },
-      { url: "https://www.etoro.com/news-and-analysis/", type: "html" },
+      { url: "https://www.etoro.com/news-and-analysis/feed/", type: "rss", lang: "en" },
+      { url: "https://www.etoro.com/news-and-analysis/", type: "html", lang: "en" },
+      { url: "https://www.etoro.com/nl/news-and-analysis/", type: "html", lang: "nl" },
+      { url: "https://www.etoro.com/de/news-and-analysis/", type: "html", lang: "de" },
+      { url: "https://www.etoro.com/fr/news-and-analysis/", type: "html", lang: "fr" },
+      { url: "https://www.etoro.com/es/news-and-analysis/", type: "html", lang: "es" },
+      { url: "https://www.etoro.com/it/news-and-analysis/", type: "html", lang: "it" },
+      { url: "https://www.etoro.com/pl/news-and-analysis/", type: "html", lang: "pl" },
     ],
   },
   {

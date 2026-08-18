@@ -10,7 +10,7 @@
 // hammer competitor sites on every request.
 
 import Parser from "rss-parser";
-import { COMPETITOR_SITES, type Competitor } from "@/config/competitors";
+import { COMPETITOR_SITES, type Competitor, type CompetitorSource } from "@/config/competitors";
 import { fetchWithTimeout } from "./http";
 import { isSafePublicUrl, readTextCapped } from "./security";
 import { scraperConfigured, scraperFetchText, scraperName } from "./scraper";
@@ -20,7 +20,9 @@ const BROWSER_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 
 const PER_SOURCE_TIMEOUT_MS = 8_000;
-const MAX_ITEMS_PER_COMPETITOR = 10;
+const MAX_ITEMS_PER_SOURCE = 10; // cap on links pulled from a single page/feed
+const MAX_ITEMS_PER_LANG = 6; // cap per language when merging, so one language can't crowd out the rest
+const MAX_ITEMS_PER_COMPETITOR = 20; // cap on the final merged (all-languages) list
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 const rss: Parser = new Parser({
@@ -32,18 +34,20 @@ export interface CompetitorItem {
   title: string;
   url: string;
   isoDate: string | null;
+  lang?: string; // which market language this item came from (see config/competitors.ts)
 }
 
 export interface CompetitorResult {
   id: string;
   name: string;
   homepage: string;
-  items: CompetitorItem[];
+  items: CompetitorItem[]; // merged across every language that returned content
   keywords: Array<{ word: string; count: number }>;
-  sourceUsed: string | null; // the URL that produced the items
-  via?: string; // proxy provider name when the render/anti-bot proxy was used
+  sourceUsed: string | null; // the first successful source's URL
+  via?: string; // proxy/render provider name when one was used for the primary source
   ok: boolean;
   error?: string;
+  langs?: string[]; // languages that actually contributed items, e.g. ["en", "nl", "de"]
 }
 
 // --- RSS source ---
@@ -152,7 +156,7 @@ function extractHtmlLinks(html: string, pageUrl: string): CompetitorItem[] {
     if (seen.has(key)) continue;
     seen.add(key);
     items.push({ title: text, url: abs.href, isoDate: null });
-    if (items.length >= MAX_ITEMS_PER_COMPETITOR) break;
+    if (items.length >= MAX_ITEMS_PER_SOURCE) break;
   }
   return items;
 }
@@ -192,69 +196,139 @@ function extractKeywords(titles: string[], ownName: string, limit = 8): Array<{ 
     .slice(0, limit);
 }
 
-// --- Per-competitor crawl ---
+// --- Per-source and per-language crawl ---
 
-async function crawlOne(c: Competitor): Promise<CompetitorResult> {
-  const finish = (items: CompetitorItem[], sourceUsed: string, via?: string): CompetitorResult => {
-    const trimmed = items.slice(0, MAX_ITEMS_PER_COMPETITOR);
-    return {
-      id: c.id,
-      name: c.name,
-      homepage: c.homepage,
-      items: trimmed,
-      keywords: extractKeywords(trimmed.map((i) => i.title), c.name),
-      sourceUsed,
-      via,
-      ok: true,
-    };
-  };
+interface SourceAttempt {
+  items: CompetitorItem[];
+  sourceUsed: string | null;
+  via?: string;
+  error?: string;
+}
+
+// Tries one candidate URL through the full fallback chain: direct fetch (free) → headless
+// browser (free, fixes pure JS-rendered SPAs) → render/anti-bot proxy (paid, opt-in).
+async function crawlSource(src: CompetitorSource): Promise<SourceAttempt> {
+  // SSRF guard: never fetch a non-public target, even if the config is edited.
+  if (!isSafePublicUrl(src.url)) return { items: [], sourceUsed: null, error: "blocked non-public URL" };
 
   let lastError = "no items found";
-  for (const src of c.sources) {
-    // SSRF guard: never fetch a non-public target, even if the config is edited.
-    if (!isSafePublicUrl(src.url)) {
-      lastError = "blocked non-public URL";
-      continue;
-    }
-    // 1) Direct fetch (free, fast).
+  // 1) Direct fetch (free, fast).
+  try {
+    const items = src.type === "rss" ? await fromRss(src.url) : await fromHtml(src.url);
+    if (items.length > 0) return { items, sourceUsed: src.url };
+    // Succeeded but nothing extractable (e.g. a JS-rendered SPA with no server-side
+    // article links) — record this, not just thrown errors, so the final message
+    // reflects the LAST thing actually tried, not a stale error from an earlier step.
+    lastError = "no items found (page returned no extractable content)";
+  } catch (err) {
+    lastError = err instanceof Error ? err.message : String(err);
+  }
+  // 2) Free headless-browser fallback — fixes pure client-rendered SPAs (no server-side
+  // article links) by actually executing the page's JS. Only helps sites that aren't ALSO
+  // actively bot-blocked (see headlessBrowser.ts) — HTML sources only, RSS needs no
+  // rendering. Tried before the paid proxy since it costs nothing.
+  if (src.type === "html") {
     try {
-      const items = src.type === "rss" ? await fromRss(src.url) : await fromHtml(src.url);
-      if (items.length > 0) return finish(items, src.url);
-      // Succeeded but nothing extractable (e.g. a JS-rendered SPA with no server-side
-      // article links) — record this, not just thrown errors, so the final message
-      // reflects the LAST source actually tried, not a stale error from an earlier one.
-      lastError = "no items found (page returned no extractable content)";
+      const html = await renderPageHtml(src.url);
+      const items = extractHtmlLinks(html, src.url);
+      if (items.length > 0) return { items, sourceUsed: src.url, via: "headless-chromium" };
+      lastError = "headless: no items found (page returned no extractable content)";
     } catch (err) {
-      lastError = err instanceof Error ? err.message : String(err);
-    }
-    // 2) Free headless-browser fallback — fixes pure client-rendered SPAs (no server-side
-    // article links) by actually executing the page's JS. Only helps sites that aren't
-    // ALSO actively bot-blocked (see headlessBrowser.ts) — for HTML sources only, RSS
-    // needs no rendering. Tried before the paid proxy since it costs nothing.
-    if (src.type === "html") {
-      try {
-        const html = await renderPageHtml(src.url);
-        const items = extractHtmlLinks(html, src.url);
-        if (items.length > 0) return finish(items, src.url, "headless-chromium");
-        lastError = "headless: no items found (page returned no extractable content)";
-      } catch (err) {
-        lastError = `headless: ${err instanceof Error ? err.message : String(err)}`;
-      }
-    }
-    // 3) Proxy fallback — renders JS / bypasses anti-bot (Cloudflare). Opt-in via env.
-    // Also runs when the direct fetch returned 0 items (JS-rendered SPA).
-    if (scraperConfigured()) {
-      try {
-        const text = await scraperFetchText(src.url, { render: src.type === "html" });
-        const items = src.type === "rss" ? await fromRssText(text) : extractHtmlLinks(text, src.url);
-        if (items.length > 0) return finish(items, src.url, scraperName());
-        lastError = "proxy: no items found (page returned no extractable content)";
-      } catch (err) {
-        lastError = `proxy: ${err instanceof Error ? err.message : String(err)}`;
-      }
+      lastError = `headless: ${err instanceof Error ? err.message : String(err)}`;
     }
   }
-  return { id: c.id, name: c.name, homepage: c.homepage, items: [], keywords: [], sourceUsed: null, ok: false, error: lastError };
+  // 3) Proxy fallback — renders JS / bypasses anti-bot (Cloudflare). Opt-in via env.
+  if (scraperConfigured()) {
+    try {
+      const text = await scraperFetchText(src.url, { render: src.type === "html" });
+      const items = src.type === "rss" ? await fromRssText(text) : extractHtmlLinks(text, src.url);
+      if (items.length > 0) return { items, sourceUsed: src.url, via: scraperName() };
+      lastError = "proxy: no items found (page returned no extractable content)";
+    } catch (err) {
+      lastError = `proxy: ${err instanceof Error ? err.message : String(err)}`;
+    }
+  }
+  return { items: [], sourceUsed: null, error: lastError };
+}
+
+// Tries each candidate source for ONE language in order, stopping at the first success —
+// mirrors the old single-language crawlOne, just scoped to one language's source list.
+async function crawlLang(sources: CompetitorSource[]): Promise<SourceAttempt> {
+  let lastError = "no items found";
+  for (const src of sources) {
+    const attempt = await crawlSource(src);
+    if (attempt.items.length > 0) return attempt;
+    if (attempt.error) lastError = attempt.error;
+  }
+  return { items: [], sourceUsed: null, error: lastError };
+}
+
+// --- Per-competitor crawl: every language runs independently and in parallel, then
+// results are merged into one deduped, date-sorted list (capped per-language so one
+// language with lots of items can't crowd the others out of the final trimmed list). ---
+
+async function crawlOne(c: Competitor): Promise<CompetitorResult> {
+  const byLang = new Map<string, CompetitorSource[]>();
+  for (const src of c.sources) {
+    const lang = src.lang ?? "en";
+    const arr = byLang.get(lang) ?? [];
+    arr.push(src);
+    byLang.set(lang, arr);
+  }
+  const langEntries = [...byLang.entries()];
+  const attempts = await Promise.all(langEntries.map(([, sources]) => crawlLang(sources)));
+
+  const seen = new Set<string>();
+  const merged: CompetitorItem[] = [];
+  const langsFound: string[] = [];
+  let primarySource: string | null = null;
+  let primaryVia: string | undefined;
+  let lastError = "no items found";
+
+  for (let i = 0; i < langEntries.length; i++) {
+    const [lang] = langEntries[i];
+    const attempt = attempts[i];
+    if (attempt.items.length === 0) {
+      if (attempt.error) lastError = attempt.error;
+      continue;
+    }
+    langsFound.push(lang);
+    if (!primarySource) {
+      primarySource = attempt.sourceUsed;
+      primaryVia = attempt.via;
+    }
+    for (const item of attempt.items.slice(0, MAX_ITEMS_PER_LANG)) {
+      const key = item.url.replace(/[?#].*$/, "");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push({ ...item, lang });
+    }
+  }
+
+  if (merged.length === 0) {
+    return { id: c.id, name: c.name, homepage: c.homepage, items: [], keywords: [], sourceUsed: null, ok: false, error: lastError };
+  }
+
+  // Newest-first; undated items (most HTML-extracted ones) tie at 0 and keep their
+  // language-iteration order (Array.sort is stable) rather than being shuffled.
+  merged.sort((a, b) => {
+    const ta = a.isoDate ? new Date(a.isoDate).getTime() : 0;
+    const tb = b.isoDate ? new Date(b.isoDate).getTime() : 0;
+    return tb - ta;
+  });
+  const trimmed = merged.slice(0, MAX_ITEMS_PER_COMPETITOR);
+
+  return {
+    id: c.id,
+    name: c.name,
+    homepage: c.homepage,
+    items: trimmed,
+    keywords: extractKeywords(trimmed.map((i) => i.title), c.name),
+    sourceUsed: primarySource,
+    via: primaryVia,
+    ok: true,
+    langs: langsFound,
+  };
 }
 
 // --- Aggregate + cache ---
