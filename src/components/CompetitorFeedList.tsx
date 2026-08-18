@@ -2,7 +2,8 @@
 import { useMemo, useState } from "react";
 import type { AggregatedItem } from "@/lib/competitors";
 
-// Items arrive already sorted newest-first (see latestAcrossCompetitors); this only filters.
+// Items arrive already interleaved round-robin across competitors, newest-known-date first
+// within each round (see latestAcrossCompetitors); this only filters.
 export default function CompetitorFeedList({ items }: { items: AggregatedItem[] }) {
   const [q, setQ] = useState("");
   const [competitor, setCompetitor] = useState("all");
@@ -36,7 +37,7 @@ export default function CompetitorFeedList({ items }: { items: AggregatedItem[] 
           <option value="all">All competitors</option>
           {competitors.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
-        <span className="text-[11px] text-[var(--muted)]">sorted by most recent</span>
+        <span className="text-[11px] text-[var(--muted)]">newest per competitor, all sites represented</span>
       </div>
 
       {filtered.length === 0 ? (

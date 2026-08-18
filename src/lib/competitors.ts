@@ -117,18 +117,43 @@ async function fromHtml(pageUrl: string): Promise<CompetitorItem[]> {
 }
 
 // Some sites flatten a "category" tag + title + publish date into one anchor's text with
-// no separate <time> element to target — e.g. Revolut: "Financial basics Best places to
-// visit in January 30 June 2026". Split a trailing "DD Month YYYY" into a real isoDate
-// instead of leaving it glued to the title — this both cleans the title AND lets the item
-// rank correctly by actual date instead of sinking to the bottom as "undated".
-const MONTHS = "January|February|March|April|May|June|July|August|September|October|November|December";
-const TRAILING_DATE_RE = new RegExp(`\\s+(\\d{1,2})\\s+(${MONTHS})\\s+(\\d{4})$`, "i");
+// no separate <time> element to target — e.g. Revolut (English): "Financial basics Best
+// places to visit in January 30 June 2026", or Bitvavo (German): "...Stille am Markt 10.
+// Aug. 2026" / "...Charakter verändert 27. Juli 2026". Split a trailing date into a real
+// isoDate instead of leaving it glued to the title — this both cleans the title AND lets
+// the item rank correctly by actual date instead of sinking to the bottom as "undated".
+// Covers every language configured in config/competitors.ts (en, nl, de, fr, es, it, pl,
+// pt) plus common abbreviated forms (e.g. "Aug.") since some locales glue those on too.
+const MONTH_NUM: Record<string, number> = (() => {
+  const table: Record<number, string[]> = {
+    1: ["january", "januar", "januari", "janvier", "enero", "gennaio", "styczeń", "stycznia", "janeiro", "jan"],
+    2: ["february", "februar", "februari", "février", "fevrier", "febrero", "febbraio", "luty", "lutego", "fevereiro", "feb"],
+    3: ["march", "märz", "marz", "mär", "maart", "mars", "marzo", "marzec", "marca", "março", "marco", "mar"],
+    4: ["april", "avril", "abril", "aprile", "kwiecień", "kwietnia", "apr"],
+    5: ["may", "mai", "mei", "mayo", "maggio", "maj", "maja", "maio"],
+    6: ["june", "juni", "juin", "junio", "giugno", "czerwiec", "czerwca", "junho", "jun"],
+    7: ["july", "juli", "juillet", "julio", "luglio", "lipiec", "lipca", "julho", "jul"],
+    8: ["august", "augustus", "août", "aout", "agosto", "sierpień", "sierpnia", "aug"],
+    9: ["september", "septembre", "septiembre", "settembre", "wrzesień", "września", "setembro", "sep", "sept"],
+    10: ["october", "oktober", "octobre", "octubre", "ottobre", "październik", "października", "outubro", "oct", "okt"],
+    11: ["november", "novembre", "noviembre", "listopad", "listopada", "novembro", "nov"],
+    12: ["december", "dezember", "décembre", "decembre", "diciembre", "dicembre", "grudzień", "grudnia", "dezembro", "dec", "dez"],
+  };
+  const out: Record<string, number> = {};
+  for (const [num, names] of Object.entries(table)) for (const n of names) out[n] = Number(num);
+  return out;
+})();
+// Day, optional trailing period, month word (letters + optional diacritics, optional
+// trailing period for abbreviations like "Aug."), 4-digit year.
+const TRAILING_DATE_RE = /\s+(\d{1,2})\.?\s+(\p{L}+)\.?\s+(\d{4})$/u;
 
 function splitTrailingDate(text: string): { title: string; isoDate: string | null } {
   const m = text.match(TRAILING_DATE_RE);
   if (!m) return { title: text, isoDate: null };
-  const [full, day, month, year] = m;
-  const parsed = new Date(`${day} ${month} ${year} UTC`);
+  const [full, day, monthWord, year] = m;
+  const month = MONTH_NUM[monthWord.toLowerCase()];
+  if (!month) return { title: text, isoDate: null };
+  const parsed = new Date(Date.UTC(Number(year), month - 1, Number(day)));
   if (Number.isNaN(parsed.getTime())) return { title: text, isoDate: null };
   const title = text.slice(0, -full.length).trim();
   return { title: title.length >= 15 ? title : text, isoDate: parsed.toISOString() };
@@ -385,15 +410,30 @@ export interface AggregatedItem extends CompetitorItem {
   competitorId: string;
 }
 
+// Fair round-robin across competitors, not a pure global date-sort. A pure date-sort lets
+// the 1-2 competitors with parseable per-item dates (e.g. an RSS feed) crowd every slot,
+// pushing out competitors whose markup never carries a date (bunq, Bybit, ...) even though
+// they're responding with real, current content — confirmed live: with a plain date-sort,
+// bunq (20 items, most of any competitor) never appeared in the top 15 at all. Instead,
+// take each competitor's next-best item one round at a time so every responding site is
+// guaranteed a slot; within a round, prefer items whose real date is known and newest.
 export function latestAcrossCompetitors(results: CompetitorResult[], limit = 15): AggregatedItem[] {
-  const all: AggregatedItem[] = [];
-  for (const r of results) {
-    for (const it of r.items) all.push({ ...it, competitor: r.name, competitorId: r.id });
+  const perCompetitor: AggregatedItem[][] = results
+    .filter((r) => r.items.length > 0)
+    .map((r) => r.items.map((it) => ({ ...it, competitor: r.name, competitorId: r.id })));
+
+  const out: AggregatedItem[] = [];
+  for (let round = 0; out.length < limit && perCompetitor.some((arr) => arr.length > round); round++) {
+    const picks = perCompetitor.map((arr) => arr[round]).filter((it): it is AggregatedItem => Boolean(it));
+    picks.sort((a, b) => {
+      const ta = a.isoDate ? new Date(a.isoDate).getTime() : 0;
+      const tb = b.isoDate ? new Date(b.isoDate).getTime() : 0;
+      return tb - ta; // dated items first (newest first) within the round; undated after
+    });
+    for (const it of picks) {
+      if (out.length >= limit) break;
+      out.push(it);
+    }
   }
-  all.sort((a, b) => {
-    const ta = a.isoDate ? new Date(a.isoDate).getTime() : 0;
-    const tb = b.isoDate ? new Date(b.isoDate).getTime() : 0;
-    return tb - ta; // newest first; undated (0) sink to the end
-  });
-  return all.slice(0, limit);
+  return out;
 }
